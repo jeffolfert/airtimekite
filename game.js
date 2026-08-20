@@ -10,7 +10,7 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
-  const VERSION = "2026.08.20.3";
+  const VERSION = "2026.08.20.4";
   const versionEl = document.getElementById("version");
   if (versionEl) versionEl.textContent = VERSION;
   const repairLink = document.getElementById("repair-link");
@@ -571,7 +571,7 @@
   const BLADDER_NOTES = [
     "Today if you drop it at the shop.",
     "We've got that one on the shelf.",
-    "Drop it at 1538 Cascade.",
+    "Drop it at the shop.",
     "This afternoon if you bring it by 4.",
     "Classic Gorge day. We'll get you riding.",
     "Hood River special — back on the water soon.",
@@ -3001,14 +3001,18 @@
 
     if (shopWipe && wipe.quote) {
       const cardW = Math.min(560, W - 32);
-      const cardH = Math.min(172, Math.max(128, H * 0.28));
+      const cardH = 164;
       const cardX = (W - cardW) / 2;
       const cardY = top + 104;
-      const broganScale = clamp(Math.min(cardW, H) * 0.00125, 0.72, 1.12);
+      const broganScale = clamp(Math.min(cardW, H) * 0.0011, 0.68, 0.92);
       const partLine = wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part);
       const btnLabel = wipe.why === "bladder" ? "Send it to Airtime"
         : wipe.why === "bird" ? "Book a repair"
         : "Take it to Airtime";
+      const note = (wipe.quote.note && /1538|cascade/i.test(wipe.quote.note))
+        ? ""
+        : (wipe.quote.note || "");
+      const shopAddress = "1538 Cascade Ave  ·  Hood River, OR";
 
       g.fillStyle = "rgba(10,18,26,0.82)";
       roundRect(g, cardX, cardY, cardW, cardH, 12);
@@ -3016,28 +3020,27 @@
       g.strokeStyle = "rgba(255,200,140,0.45)";
       g.lineWidth = 1.5;
       g.stroke();
-      drawDancingBrogan(g, cardX + 70, cardY + cardH * 0.5, wipe.t, broganScale);
-      const tx = cardX + 138;
+      drawDancingBrogan(g, cardX + 64, cardY + cardH * 0.48, wipe.t, broganScale);
+      const tx = cardX + 148;
       g.textAlign = "left";
       g.textBaseline = "top";
       g.font = "800 13px Trebuchet MS, sans-serif";
       g.fillStyle = "#fff6d8";
-      g.fillText("Brogan's on it.", tx, cardY + 12);
-      g.font = "600 11px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,226,170,0.8)";
-      g.fillText("Airtime Kite  ·  Hood River", tx, cardY + 30);
+      g.fillText("Brogan's on it.", tx, cardY + 14);
       g.font = "800 30px Trebuchet MS, sans-serif";
       g.fillStyle = "#fff6d8";
-      g.fillText("$" + wipe.quote.price, tx, cardY + 48);
+      g.fillText("$" + wipe.quote.price, tx, cardY + 36);
       g.font = "700 14px Trebuchet MS, sans-serif";
       g.fillStyle = "#ffe08a";
-      g.fillText(partLine, tx, cardY + 84);
-      g.font = "600 12px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,236,200,0.85)";
-      g.fillText(wipe.quote.note, tx, cardY + 106);
-      g.font = "600 11px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,255,255,0.5)";
-      g.fillText("AIRTIME  ·  1538 Cascade Ave  ·  Hood River, OR", tx, cardY + 126);
+      g.fillText(partLine, tx, cardY + 74);
+      if (note) {
+        g.font = "600 13px Trebuchet MS, sans-serif";
+        g.fillStyle = "rgba(255,236,200,0.88)";
+        g.fillText(note, tx, cardY + 98);
+      }
+      g.font = "700 13px Trebuchet MS, sans-serif";
+      g.fillStyle = "rgba(255,245,220,0.92)";
+      g.fillText(shopAddress, tx, cardY + (note ? 124 : 104));
       drawRepairButton(g, btnLabel, cardY + cardH + 14);
     } else {
       drawRepairButton(g, "Book a repair", H * 0.62);
