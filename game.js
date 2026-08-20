@@ -559,10 +559,6 @@
     ],
     bird: [
       "BIRD STRIKE",
-      "OSPREY TAX",
-      "GULL SAID MINE",
-      "THE KITE WAS A SNACK",
-      "GORGE AIR TRAFFIC",
     ],
     barge: [
       "BARGE",
@@ -659,8 +655,15 @@
     n.start();
   }
 
-  function makeEstimate() {
+  function makeEstimate(kind) {
     const steps = 45 + Math.round(Math.random() * 27) * 5;
+    if (kind === "bird") {
+      return {
+        price: clamp(steps + 20, 65, 200),
+        part: "canopy shredded",
+        note: pick(BLADDER_NOTES),
+      };
+    }
     return {
       price: clamp(steps, 45, 180),
       part: pick(BLADDER_PARTS),
@@ -815,14 +818,24 @@
     }
   }
 
+  function kiteCanopyHit(bx, by, birdR) {
+    const kp = kiteScreenPos();
+    const dx = bx - kp.x;
+    const dy = by - kp.y;
+    const scale = 1 + clamp(kite.pull * 0.15, 0, 0.25);
+    const hw = (46 * scale) / PX + birdR;
+    const hh = (16 * scale) / PX + birdR;
+    return (dx * dx) / (hw * hw) + (dy * dy) / (hh * hh) <= 1;
+  }
+
   function onBirdHit(b) {
     if (b.hit || state !== STATE.PLAY || bladder.blown) return;
     b.hit = true;
     b.scored = true;
     b.vx += rand(-8, 8);
     b.vy += rand(3, 8);
-    shake = 10;
-    flash = 0.22;
+    shake = 14;
+    flash = 0.35;
     birdSquawk();
     emitFeathers(b.x, b.y, b.kind);
 
@@ -834,15 +847,9 @@
     rider.vx *= 0.78;
     if (!rider.onWater) rider.vy += rand(-2, 6);
 
-    const alreadyTorn = kite.torn;
     kite.torn = true;
-    const fatal = alreadyTorn || kite.h < 0.26 || Math.random() < 0.38;
-    if (fatal) {
-      popup("BIRD STRIKE", "#ffd36a", true);
-      beginWipe("bird");
-    } else {
-      addScore(80, "BIRD STRIKE", "#ffb36b", true);
-    }
+    popup("BIRD STRIKE", "#ffd36a", true);
+    beginWipe("bird");
   }
 
   function stepBirds(dt) {
@@ -872,8 +879,8 @@
         b.vx = lerp(b.vx, (dx / dist) * spd, k);
         b.vy = lerp(b.vy, (dy / dist) * spd, k);
 
-        const hitR = b.kind === "osprey" ? 3.5 : 3.0;
-        if (dist < hitR) {
+        const birdR = b.kind === "osprey" ? 1.4 : 1.1;
+        if (kiteCanopyHit(b.x, b.y, birdR)) {
           onBirdHit(b);
         } else if (!b.scored && dist < 7.2 && b.age > 0.7) {
           b.close = true;
@@ -1206,7 +1213,7 @@
     wipe.t = 0;
     wipe.why = kind;
     wipe.tag = pick(WIPE_LINES[kind] || WIPE_LINES.crash);
-    wipe.quote = kind === "bladder" ? makeEstimate() : null;
+    wipe.quote = (kind === "bladder" || kind === "bird") ? makeEstimate(kind) : null;
     rider.spinV = rand(-10, 10);
     rider.vy = Math.min(rider.vy, -2);
     shake = 12;
@@ -2556,6 +2563,7 @@
   }
 
   function wipeScreen(g) {
+    const shopWipe = wipe.why === "bladder" || wipe.why === "bird";
     const bladderWipe = wipe.why === "bladder";
     g.fillStyle = "rgba(6,10,16," + clamp(wipe.t * 0.55, 0, 0.52) + ")";
     g.fillRect(0, 0, W, H);
@@ -2564,7 +2572,7 @@
     g.textBaseline = "alphabetic";
     g.fillStyle = bladderWipe ? "#ffb080" : "#ffd28a";
     g.font = "800 " + clamp(W * 0.05, 26, 48) + "px Trebuchet MS, sans-serif";
-    const top = H * (bladderWipe ? 0.12 : 0.22);
+    const top = H * (shopWipe ? 0.12 : 0.22);
     g.fillText(wipe.tag, W * 0.5, top);
     if (wipe.final) {
       g.font = "700 32px Trebuchet MS, sans-serif";
@@ -2588,7 +2596,7 @@
       }
     }
 
-    if (bladderWipe && wipe.quote) {
+    if (shopWipe && wipe.quote) {
       const cardW = Math.min(540, W - 36);
       const cardH = Math.min(148, H * 0.28);
       const cardX = (W - cardW) / 2;
@@ -2610,14 +2618,14 @@
       g.fillStyle = "#fff6d8";
       g.fillText("$" + wipe.quote.price, tx, cardY + 34);
       g.font = "700 14px Trebuchet MS, sans-serif";
-      g.fillText("on the " + wipe.quote.part, tx, cardY + 58);
+      g.fillText(wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part), tx, cardY + 58);
       g.font = "600 12px Trebuchet MS, sans-serif";
       g.fillStyle = "rgba(255,236,200,0.8)";
       g.fillText(wipe.quote.note, tx, cardY + 80);
       g.font = "600 11px Trebuchet MS, sans-serif";
       g.fillStyle = "rgba(255,255,255,0.5)";
       g.fillText("AIRTIME  ·  1538 Cascade Ave  ·  Hood River, OR", tx, cardY + 86);
-      drawRepairButton(g, "Send it to Airtime", cardY + cardH + 16);
+      drawRepairButton(g, wipe.why === "bird" ? "Book a repair" : "Send it to Airtime", cardY + cardH + 16);
     } else {
       drawRepairButton(g, "Book a repair", H * 0.62);
     }
