@@ -10,7 +10,7 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
-  const VERSION = "2026.08.20.1";
+  const VERSION = "2026.08.20.2";
   const versionEl = document.getElementById("version");
   if (versionEl) versionEl.textContent = VERSION;
   const repairLink = document.getElementById("repair-link");
@@ -436,6 +436,7 @@
       passed: false,
       scoredJump: false,
       path: 0,
+      peakY: 0,
     },
   };
 
@@ -797,6 +798,7 @@
   function bargeNear() {
     for (let i = 0; i < barges.length; i++) {
       const b = barges[i];
+      if (b.sinking) continue;
       if (rider.x > b.x - 28 && rider.x < b.x + b.len + 10) return true;
     }
     return false;
@@ -844,6 +846,82 @@
       age: 0,
     });
     if (Math.random() < 0.4) blip(540, 0.06, "triangle", 0.03);
+  }
+
+  function emitBirdBurst(x, y) {
+    for (let i = 0; i < 18; i++) {
+      spray.push({
+        x: x + rand(-0.45, 0.45),
+        y: y + rand(-0.35, 0.35),
+        vx: rand(-16, 16),
+        vy: rand(-4, 18),
+        life: rand(0.28, 0.72),
+        age: 0,
+        r: rand(2, 6),
+        col: Math.random() < 0.55 ? "rgba(255,210,110," : "rgba(255,140,70,",
+      });
+    }
+  }
+
+  function explodeSessionBirds() {
+    let n = 0;
+    for (let i = 0; i < birds.length; i++) {
+      const b = birds[i];
+      if (b.exploded) continue;
+      b.exploded = true;
+      b.hit = true;
+      b.scored = true;
+      b.boomT = 0;
+      b.vx = rand(-16, 16);
+      b.vy = rand(5, 18);
+      emitFeathers(b.x, b.y, b.kind);
+      emitBirdBurst(b.x, b.y);
+      birdSquawk();
+      n += 1;
+    }
+    return n;
+  }
+
+  function sinkSessionBarges() {
+    let n = 0;
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (b.sinking) continue;
+      b.sinking = true;
+      b.sinkT = 0;
+      emitSplash(b.x + b.len * 0.35, 0, 1.25);
+      emitSplash(b.x + b.len * 0.75, 0, 1.05);
+      bargeHorn();
+      n += 1;
+    }
+    if (n) bargeClock = Math.max(bargeClock, 12);
+    return n;
+  }
+
+  function landingOnBarge() {
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (b.sinking) continue;
+      if (bargeObstacleHeight(b, rider.x) > 0) return true;
+    }
+    return false;
+  }
+
+  function isGreatAir() {
+    // Past MEGA AIR and a real peak — weak hops and skim loaded pops do not count.
+    return run.thisJump.scoredJump && run.thisJump.air >= 3.25 && run.thisJump.peakY >= 15.5;
+  }
+
+  function celebrateGreatAir() {
+    const birdsN = explodeSessionBirds();
+    const bargeN = sinkSessionBarges();
+    if (!birdsN && !bargeN) return;
+    if (birdsN) addScore(220 + birdsN * 90, "BIRDS DOWN", "#ffd36a", true);
+    if (bargeN) addScore(380, "BARGE SUNK", "#9ad0ff", true);
+    if (birdsN && bargeN) popup("THE GORGE SAID YES", "#fff6d8", true);
+    shake = Math.max(shake, 11);
+    flash = Math.max(flash, 0.3);
+    whoosh();
   }
 
   function emitFeathers(x, y, kind) {
@@ -936,6 +1014,13 @@
 
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      if (b.exploded) {
+        b.boomT = (b.boomT || 0) + dt;
+        if (b.boomT > 0.5) {
+          birds.splice(i, 1);
+          continue;
+        }
+      }
       if (b.age > 6.5 || Math.abs(b.x - rider.x) > 90) birds.splice(i, 1);
     }
   }
@@ -959,6 +1044,8 @@
       horned: false,
       cleared: false,
       scored: false,
+      sinking: false,
+      sinkT: 0,
     });
     popup("BARGE UPRIVER", "#d8c49a", false);
   }
@@ -987,6 +1074,15 @@
     for (let i = barges.length - 1; i >= 0; i--) {
       const b = barges[i];
       b.x += b.vx * dt;
+      if (b.sinking) {
+        b.sinkT += dt;
+        b.vx *= 0.985;
+        if (Math.random() < 0.55) {
+          emitSpray(2, b.x + rand(0, b.len), rand(0, 0.2), 3, true);
+        }
+        if (b.sinkT > 2.35) barges.splice(i, 1);
+        continue;
+      }
       if (!b.horned && b.x - rider.x < 58 && rider.x < b.x + b.len + 20) {
         b.horned = true;
         bargeHorn();
@@ -1015,6 +1111,14 @@
       if (sx > W + 80 || sx + b.len * PX < -80) continue;
       const sy = wy(0);
       g.save();
+      const sinkT = b.sinking ? b.sinkT : 0;
+      if (sinkT > 0) {
+        const midX = sx + b.len * PX * 0.5;
+        g.globalAlpha = 1 - clamp((sinkT - 0.7) / 1.6, 0, 0.88);
+        g.translate(midX, sy + sinkT * 48);
+        g.rotate(sinkT * 0.2);
+        g.translate(-midX, -sy);
+      }
 
       // wake
       g.fillStyle = "rgba(210,236,250,0.22)";
@@ -1106,8 +1210,13 @@
       const osprey = b.kind === "osprey";
       g.save();
       g.translate(x, y);
-      g.rotate(Math.atan2(-b.vy, b.vx) * 0.45);
+      g.rotate(Math.atan2(-b.vy, b.vx) * 0.45 + (b.exploded ? (b.boomT || 0) * 14 : 0));
       if (b.vx < 0) g.scale(-1, 1);
+      if (b.exploded) {
+        const s = clamp(1 - (b.boomT || 0) * 1.6, 0.15, 1);
+        g.scale(s * 1.2, s * 0.7);
+        g.globalAlpha = clamp(1 - (b.boomT || 0) * 1.8, 0, 1);
+      }
 
       // wings
       g.fillStyle = osprey ? "#6a4a2c" : "#f2f2f6";
@@ -1232,6 +1341,7 @@
     run.thisJump.passed = false;
     run.thisJump.scoredJump = false;
     run.thisJump.path = 0;
+    run.thisJump.peakY = 0;
 
     rider.yank = 0;
     rider.stall = 0;
@@ -1477,6 +1587,7 @@
         run.thisJump.passed = false;
         run.thisJump.scoredJump = false;
         run.thisJump.path = 0;
+        run.thisJump.peakY = 0;
         kite.loopAccum = 0;
         emitSplash(rider.x, 0, 0.45 + pull * 0.4);
         whoosh();
@@ -1491,6 +1602,7 @@
         run.thisJump.looped = false;
         run.thisJump.passed = false;
         run.thisJump.scoredJump = false;
+        run.thisJump.peakY = 0;
         emitSpray(8, rider.x, 0, rider.vx, false);
       }
 
@@ -1508,6 +1620,7 @@
       run.thisJump.air += dt;
       run.air += dt;
       run.maxAir = Math.max(run.maxAir, run.thisJump.air);
+      run.thisJump.peakY = Math.max(run.thisJump.peakY, rider.y);
 
       rider.spinV += kite.vpos * 1.8 * dt;
       if (c.grab) rider.spinV += 2.6 * dt;
@@ -1561,6 +1674,7 @@
         if (hard > 8) {
           addScore(30, "CLEAN", "#d4fff0", false);
         }
+        if (isGreatAir() && !landingOnBarge()) celebrateGreatAir();
         rider.spin = 0;
         rider.spinV = 0;
         rider.vy = 0;
