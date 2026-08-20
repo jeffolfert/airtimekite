@@ -10,6 +10,11 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
+  const VERSION = "2026.08.20.1";
+  const versionEl = document.getElementById("version");
+  if (versionEl) versionEl.textContent = VERSION;
+  const repairLink = document.getElementById("repair-link");
+  if (repairLink) repairLink.href = REPAIR_URL;
 
   const STATE = { TITLE: 0, PLAY: 1, WIPE: 2 };
 
@@ -262,30 +267,8 @@
     return false;
   }
 
-  function startShopDance() {
-    if (shopDance.active) return;
-    shopDance.active = true;
-    shopDance.t = 0;
-    shopDance.duration = rand(1.5, 2.5);
-    shopDance.opened = false;
-    shopDance.waitTap = false;
-    blip(220, 0.1, "triangle", 0.06);
-    blip(330, 0.14, "sine", 0.05);
-    blip(440, 0.18, "triangle", 0.04);
-  }
-
-  function finishShopDance() {
-    if (launchAirtime()) {
-      shopDance.opened = true;
-      shopDance.active = false;
-      shopDance.waitTap = false;
-    } else {
-      shopDance.waitTap = true;
-    }
-  }
-
   function openRepair() {
-    startShopDance();
+    launchAirtime();
   }
 
   function onPointerDown(e) {
@@ -294,10 +277,6 @@
     pointer.down = true;
     pointer.x = p.x;
     pointer.y = p.y;
-    if (shopDance.active) {
-      if (shopDance.waitTap) finishShopDance();
-      return;
-    }
     if (state === STATE.WIPE && hitRepair(p)) {
       openRepair();
       return;
@@ -358,7 +337,7 @@
     pointer.x = p.x;
     pointer.y = p.y;
     if (joy.active && e.pointerId === joy.id) updateJoy(p);
-    canvas.style.cursor = ((state === STATE.WIPE && hitRepair(p)) || shopDance.active) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
+    canvas.style.cursor = (state === STATE.WIPE && hitRepair(p)) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
   }
 
   function onPointerUp(e) {
@@ -588,6 +567,43 @@
     "Leave it at Airtime. We'll call when it's done.",
     "Couple hours if the sewing machine is free.",
   ];
+  const BARGE_PARTS = [
+    "leading edge vs a hopper",
+    "canopy and a bent bar",
+    "torn strut and the chicken loop",
+    "one side of the leading edge",
+    "a wrapped line and a dinged board",
+  ];
+  const CRASH_PARTS = [
+    "stretched lines and a dinged board",
+    "cracked board and a blown valve",
+    "a tweaked bar and the leading edge",
+    "both tips and a seam",
+  ];
+  const LOOP_PARTS = [
+    "a twisted line set",
+    "bridle and a wrapped leading edge",
+    "lines through the canopy",
+    "the bar and a cooked bridle",
+  ];
+  const WATER_PARTS = [
+    "a soaked bladder and a valve",
+    "lines and a rinse",
+    "sand in the valve and a strut",
+    "a soggy leading edge",
+  ];
+  const REPAIR_WIPES = {
+    bladder: true,
+    bird: true,
+    barge: true,
+    crash: true,
+    loopfail: true,
+    waterkite: true,
+  };
+
+  function isRepairWipe(kind) {
+    return !!REPAIR_WIPES[kind];
+  }
 
   // ---------- particles ----------
   function emitSpray(n, x, y, vx, heavy) {
@@ -661,6 +677,34 @@
       return {
         price: clamp(steps + 20, 65, 200),
         part: "canopy shredded",
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "barge") {
+      return {
+        price: clamp(steps + 25, 70, 210),
+        part: pick(BARGE_PARTS),
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "crash") {
+      return {
+        price: clamp(steps + 10, 55, 190),
+        part: pick(CRASH_PARTS),
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "loopfail") {
+      return {
+        price: clamp(steps + 15, 60, 195),
+        part: pick(LOOP_PARTS),
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "waterkite") {
+      return {
+        price: clamp(steps, 45, 160),
+        part: pick(WATER_PARTS),
         note: pick(BLADDER_NOTES),
       };
     }
@@ -897,22 +941,38 @@
   }
 
   function spawnBarge() {
-    const units = Math.random() < 0.35 ? 2 : 3;
-    const bargeLen = 20;
-    const tugLen = 14;
-    const gap = 2.4;
+    // 1 grain barge + tug is the usual Columbia traffic; sometimes a double.
+    // Length is tuned so a loaded pop with enough air can clear and land clean.
+    const units = Math.random() < 0.62 ? 1 : 2;
+    const bargeLen = 14;
+    const tugLen = 12;
+    const gap = 2;
     const len = tugLen + units * bargeLen + (units + 1) * gap;
     barges.push({
-      x: rider.x + rand(96, 150),
-      vx: -rand(2.3, 3.5),
+      x: rider.x + rand(88, 138),
+      vx: -rand(2.4, 3.6),
       units,
       tugLen,
       bargeLen,
       gap,
       len,
       horned: false,
+      cleared: false,
+      scored: false,
     });
     popup("BARGE UPRIVER", "#d8c49a", false);
+  }
+
+  // Visual heights (PX=10): hoppers ~5.6m, tug stack ~6.8m, deck/couplings ~2.8m.
+  function bargeObstacleHeight(b, x) {
+    if (x < b.x - 0.8 || x > b.x + b.len + 0.8) return 0;
+    let cx = b.x + b.gap;
+    for (let u = 0; u < b.units; u++) {
+      if (x >= cx - 0.35 && x <= cx + b.bargeLen + 0.35) return 5.7;
+      cx += b.bargeLen + b.gap;
+    }
+    if (x >= cx - 0.25 && x <= cx + b.tugLen + 1.0) return 6.8;
+    return 2.5;
   }
 
   function stepBarges(dt) {
@@ -932,10 +992,17 @@
         bargeHorn();
       }
       if (state === STATE.PLAY && !bladder.blown) {
-        const deck = 3.4;
-        if (rider.x > b.x - 1.1 && rider.x < b.x + b.len + 1.1 && rider.y < deck + 0.55) {
+        const hitH = bargeObstacleHeight(b, rider.x);
+        if (hitH > 0 && rider.y < hitH) {
           crashThud();
           beginWipe("barge");
+        } else if (hitH > 0 && rider.y >= hitH) {
+          b.cleared = true;
+        } else if (!b.scored && b.cleared && rider.x > b.x + b.len + 1.2) {
+          b.scored = true;
+          addScore(420, "BARGE JUMP", "#ffe08a", true);
+          blip(360, 0.12, "triangle", 0.05);
+          blip(540, 0.14, "sine", 0.05);
         }
       }
       if (b.x + b.len < rider.x - 70) barges.splice(i, 1);
@@ -1191,6 +1258,7 @@
     birdClock = rand(7, 12);
     bargeClock = rand(14, 22);
     layout.repair.visible = false;
+    if (repairLink) repairLink.style.display = "none";
     shopDance.active = false;
     shopDance.t = 0;
     shopDance.opened = false;
@@ -1213,7 +1281,7 @@
     wipe.t = 0;
     wipe.why = kind;
     wipe.tag = pick(WIPE_LINES[kind] || WIPE_LINES.crash);
-    wipe.quote = (kind === "bladder" || kind === "bird") ? makeEstimate(kind) : null;
+    wipe.quote = isRepairWipe(kind) ? makeEstimate(kind) : null;
     rider.spinV = rand(-10, 10);
     rider.vy = Math.min(rider.vy, -2);
     shake = 12;
@@ -1391,7 +1459,14 @@
       const loft = clamp((kite.h - 0.45) * 1.4, 0, 1);
       const sendUp = Math.max(0, kite.vh) + kite.send * 0.35;
       if (c.pop && loaded) {
-        const pop = 11.4 + rider.vx * 0.4 + pull * 6.2 + sendUp * 3.5 + loft * 4.0;
+        let pop = 11.4 + rider.vx * 0.4 + pull * 6.2 + sendUp * 3.5 + loft * 4.0;
+        for (let i = 0; i < barges.length; i++) {
+          const ahead = barges[i].x - rider.x;
+          if (ahead > 4 && ahead < 26) {
+            pop += 3.4;
+            break;
+          }
+        }
         rider.vy = pop;
         rider.onWater = false;
         rider.spinV = (kite.vpos + (c.grab ? 2 : 0.4)) * 1.1;
@@ -2261,14 +2336,16 @@
     g.restore();
   }
 
-  function drawDancingBrogan(g, cx, cy, t) {
+  function drawDancingBrogan(g, cx, cy, t, scale) {
     const bounce = Math.abs(Math.sin(t * 11)) * 16;
     const sway = Math.sin(t * 8.2) * 0.16;
     const step = Math.sin(t * 11);
     const arm = Math.sin(t * 10.5);
+    const s = scale == null ? 1 : scale;
 
     g.save();
     g.translate(cx, cy);
+    g.scale(s, s);
     g.fillStyle = "rgba(20,12,8,0.28)";
     g.beginPath();
     g.ellipse(0, 86, 42 + Math.abs(step) * 6, 10, 0, 0, TWO_PI);
@@ -2538,6 +2615,21 @@
     g.restore();
   }
 
+  function syncRepairLink(label) {
+    if (!repairLink) return;
+    const b = layout.repair;
+    if (!b.visible || state !== STATE.WIPE) {
+      repairLink.style.display = "none";
+      return;
+    }
+    repairLink.textContent = label || "Take it to Airtime";
+    repairLink.style.display = "block";
+    repairLink.style.left = b.x + "px";
+    repairLink.style.top = b.y + "px";
+    repairLink.style.width = b.w + "px";
+    repairLink.style.height = b.h + "px";
+  }
+
   function drawRepairButton(g, label, y) {
     const bw = Math.min(320, W - 48);
     const bh = 46;
@@ -2560,10 +2652,11 @@
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(label, W * 0.5, by + bh * 0.5);
+    syncRepairLink(label);
   }
 
   function wipeScreen(g) {
-    const shopWipe = wipe.why === "bladder" || wipe.why === "bird";
+    const shopWipe = isRepairWipe(wipe.why) && !!wipe.quote;
     const bladderWipe = wipe.why === "bladder";
     g.fillStyle = "rgba(6,10,16," + clamp(wipe.t * 0.55, 0, 0.52) + ")";
     g.fillRect(0, 0, W, H);
@@ -2597,35 +2690,45 @@
     }
 
     if (shopWipe && wipe.quote) {
-      const cardW = Math.min(540, W - 36);
-      const cardH = Math.min(148, H * 0.28);
+      const cardW = Math.min(560, W - 32);
+      const cardH = Math.min(172, Math.max(128, H * 0.28));
       const cardX = (W - cardW) / 2;
-      const cardY = top + 108;
-      g.fillStyle = "rgba(10,18,26,0.72)";
+      const cardY = top + 104;
+      const broganScale = clamp(Math.min(cardW, H) * 0.00125, 0.72, 1.12);
+      const partLine = wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part);
+      const btnLabel = wipe.why === "bladder" ? "Send it to Airtime"
+        : wipe.why === "bird" ? "Book a repair"
+        : "Take it to Airtime";
+
+      g.fillStyle = "rgba(10,18,26,0.82)";
       roundRect(g, cardX, cardY, cardW, cardH, 12);
       g.fill();
-      g.strokeStyle = "rgba(255,200,140,0.35)";
+      g.strokeStyle = "rgba(255,200,140,0.45)";
       g.lineWidth = 1.5;
       g.stroke();
-      drawBrogan(g, cardX + 62, cardY + cardH * 0.42);
+      drawDancingBrogan(g, cardX + 70, cardY + cardH * 0.5, wipe.t, broganScale);
+      const tx = cardX + 138;
       g.textAlign = "left";
       g.textBaseline = "top";
-      const tx = cardX + 122;
-      g.font = "700 12px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,226,170,0.85)";
-      g.fillText("Brogan at Airtime  ·  Hood River", tx, cardY + 14);
-      g.font = "800 20px Trebuchet MS, sans-serif";
+      g.font = "800 13px Trebuchet MS, sans-serif";
       g.fillStyle = "#fff6d8";
-      g.fillText("$" + wipe.quote.price, tx, cardY + 34);
+      g.fillText("Brogan's on it.", tx, cardY + 12);
+      g.font = "600 11px Trebuchet MS, sans-serif";
+      g.fillStyle = "rgba(255,226,170,0.8)";
+      g.fillText("Airtime Kite  ·  Hood River", tx, cardY + 30);
+      g.font = "800 30px Trebuchet MS, sans-serif";
+      g.fillStyle = "#fff6d8";
+      g.fillText("$" + wipe.quote.price, tx, cardY + 48);
       g.font = "700 14px Trebuchet MS, sans-serif";
-      g.fillText(wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part), tx, cardY + 58);
+      g.fillStyle = "#ffe08a";
+      g.fillText(partLine, tx, cardY + 84);
       g.font = "600 12px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,236,200,0.8)";
-      g.fillText(wipe.quote.note, tx, cardY + 80);
+      g.fillStyle = "rgba(255,236,200,0.85)";
+      g.fillText(wipe.quote.note, tx, cardY + 106);
       g.font = "600 11px Trebuchet MS, sans-serif";
       g.fillStyle = "rgba(255,255,255,0.5)";
-      g.fillText("AIRTIME  ·  1538 Cascade Ave  ·  Hood River, OR", tx, cardY + 86);
-      drawRepairButton(g, wipe.why === "bird" ? "Book a repair" : "Send it to Airtime", cardY + cardH + 16);
+      g.fillText("AIRTIME  ·  1538 Cascade Ave  ·  Hood River, OR", tx, cardY + 126);
+      drawRepairButton(g, btnLabel, cardY + cardH + 14);
     } else {
       drawRepairButton(g, "Book a repair", H * 0.62);
     }
@@ -2692,16 +2795,9 @@
       stepBarges(dt);
       stepCam(dt);
       stepParticles(dt);
-      if (startLatched && wipe.t > 0.35 && !shopDance.active) {
+      if (startLatched && wipe.t > 0.35) {
         startLatched = false;
         startPlay();
-      }
-    }
-    if (shopDance.active) {
-      shopDance.t += dt;
-      startLatched = false;
-      if (!shopDance.waitTap && shopDance.t >= shopDance.duration) {
-        finishShopDance();
       }
     }
     startLatched = false;
@@ -2720,6 +2816,7 @@
 
     if (state === STATE.TITLE) {
       layout.repair.visible = false;
+      syncRepairLink();
       titleScreen(ctx);
     } else {
       const kp = kiteScreenPos();
@@ -2736,14 +2833,13 @@
       hud(ctx);
       drawTouch(ctx);
       if (state === STATE.WIPE) wipeScreen(ctx);
+      else syncRepairLink();
     }
 
     if (flash > 0.02) {
       ctx.fillStyle = "rgba(255,220,180," + (flash * 0.35).toFixed(3) + ")";
       ctx.fillRect(-20, -20, W + 40, H + 40);
     }
-
-    if (shopDance.active) drawShopDance(ctx);
 
     requestAnimationFrame(frame);
   }
