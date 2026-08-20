@@ -29,6 +29,8 @@ Repairs and replacement bladders: [airtimekite.com](https://www.airtimekite.com/
 - **Kiteloop** — fly the kite in a full circle in the air
 - **Handlepass** — spin a full 360 while grabbing
 - Combos stack if you land clean and send again quickly
+- **Dodged** — steer the kite off a diving gull or osprey
+- **Bird strike** — survive a hit on the canopy
 - Best run is saved in the browser
 
-Wind comes and goes. Overpowered and not edging = yoink. No power = stall. Every now and then a bladder explodes — Brogan will quote the repair. Wipeouts are cheap: one button and you’re back on the water.
+Wind comes and goes. Overpowered and not edging = yoink. No power = stall. Every now and then a bladder explodes — Brogan will quote the repair. Gulls and osprey take runs at the kite — move it or eat a bird strike. Grain barges work the river; jump them or it's a crash. And sometimes the Gorge just dumps you: edge catch, loop gone wrong, gust slam, chop. Wipeouts are cheap: one button and you’re back on the water.

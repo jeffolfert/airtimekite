@@ -425,6 +425,7 @@
     visY: 0,
     loopAccum: 0,
     lastAtan: 0,
+    torn: false,
   };
 
   const wind = {
@@ -480,6 +481,16 @@
     next: 14,
   };
 
+  const chaos = {
+    next: 16,
+  };
+
+  const birds = [];
+  let birdClock = 9;
+
+  const barges = [];
+  let bargeClock = 18;
+
   const spray = [];
   const pops = [];
   const foams = [];
@@ -517,6 +528,48 @@
       "POP. THAT'S A BLADDER.",
       "SOMEONE CALL AIRTIME",
       "THAT KITE JUST SIGHED",
+    ],
+    edge: [
+      "EDGE CATCH",
+      "CAUGHT AN EDGE",
+      "FIN IN THE CHOP",
+      "THAT RAIL BIT BACK",
+      "BOARDED YOURSELF",
+    ],
+    loopfail: [
+      "LOOP GONE WRONG",
+      "THAT LOOP HAD IDEAS",
+      "KITE ATE THE LINES",
+      "WINDOW? WHAT WINDOW",
+      "SENT IT. THE RIVER KEPT IT",
+    ],
+    gustslam: [
+      "GUST SLAM",
+      "NUCLEAR FROM BEHIND",
+      "THE GORGE SAID SIT DOWN",
+      "THAT PUFF WAS PERSONAL",
+      "WEST WIND TAX",
+    ],
+    chop: [
+      "CHOP TO THE FACE",
+      "RIVER SAID NO",
+      "WHITECAP WHIPLASH",
+      "HOLE IN THE FACE",
+      "COLUMBIA SLAP",
+    ],
+    bird: [
+      "BIRD STRIKE",
+      "OSPREY TAX",
+      "GULL SAID MINE",
+      "THE KITE WAS A SNACK",
+      "GORGE AIR TRAFFIC",
+    ],
+    barge: [
+      "BARGE",
+      "GRAIN TRAIN",
+      "TUG SAID EXCUSE ME",
+      "THAT IS NOT A KICKER",
+      "COMMERCIAL TRAFFIC",
     ],
   };
 
@@ -649,6 +702,382 @@
     }
   }
 
+  function crashThud() {
+    if (!audio.ctx) return;
+    blip(70, 0.18, "square", 0.09);
+    blip(120, 0.12, "sawtooth", 0.05);
+    splash();
+  }
+
+  function birdSquawk() {
+    if (!audio.ctx) return;
+    const ac = audio.ctx;
+    blip(620, 0.09, "square", 0.05);
+    blip(880, 0.07, "sawtooth", 0.035);
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = "triangle";
+    o.frequency.setValueAtTime(740, ac.currentTime);
+    o.frequency.exponentialRampToValueAtTime(280, ac.currentTime + 0.16);
+    g.gain.setValueAtTime(0.06, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.2);
+    o.connect(g);
+    g.connect(ac.destination);
+    o.start();
+    o.stop(ac.currentTime + 0.22);
+  }
+
+  function bargeHorn() {
+    if (!audio.ctx) return;
+    const ac = audio.ctx;
+    const o = ac.createOscillator();
+    const g = ac.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(92, ac.currentTime);
+    o.frequency.linearRampToValueAtTime(74, ac.currentTime + 0.55);
+    g.gain.setValueAtTime(0.07, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.7);
+    const f = ac.createBiquadFilter();
+    f.type = "lowpass";
+    f.frequency.value = 240;
+    o.connect(f);
+    f.connect(g);
+    g.connect(ac.destination);
+    o.start();
+    o.stop(ac.currentTime + 0.72);
+  }
+
+  function bargeNear() {
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (rider.x > b.x - 28 && rider.x < b.x + b.len + 10) return true;
+    }
+    return false;
+  }
+
+  function maybeChaos(dt) {
+    if (state !== STATE.PLAY || bladder.blown) return;
+    if (runTime < 10) return;
+    if (bargeNear()) {
+      chaos.next = Math.max(chaos.next, 3.5);
+      return;
+    }
+    chaos.next -= dt;
+    if (chaos.next > 0) return;
+    chaos.next = rand(14, 24);
+    if (Math.random() > 0.35) return;
+
+    let kind = "chop";
+    if (!rider.onWater && Math.abs(kite.loopAccum) > 1.8) kind = "loopfail";
+    else if (!rider.onWater && Math.random() < 0.42) kind = "loopfail";
+    else if (wind.gust > 0.45 || wind.knots > 24) kind = "gustslam";
+    else if (rider.onWater && rider.edge > 0.45) kind = "edge";
+    else kind = pick(["chop", "edge", "gustslam", "chop"]);
+
+    crashThud();
+    beginWipe(kind);
+  }
+
+  function spawnBird() {
+    const kp = kiteScreenPos();
+    const fromLeft = Math.random() < 0.5;
+    const kind = Math.random() < 0.55 ? "gull" : "osprey";
+    const high = kind === "osprey";
+    birds.push({
+      x: kp.x + (fromLeft ? -30 : 30) + rand(-8, 8),
+      y: kp.y + (high ? rand(8, 18) : rand(1, 12)),
+      vx: fromLeft ? rand(9, 15) : -rand(9, 15),
+      vy: high ? -rand(0.5, 2.5) : rand(-2, 2),
+      kind,
+      wing: rand(0, TWO_PI),
+      dive: false,
+      hit: false,
+      scored: false,
+      close: false,
+      age: 0,
+    });
+    if (Math.random() < 0.4) blip(540, 0.06, "triangle", 0.03);
+  }
+
+  function emitFeathers(x, y, kind) {
+    const col = kind === "osprey" ? "rgba(176,118,58," : "rgba(236,236,242,";
+    for (let i = 0; i < 16; i++) {
+      spray.push({
+        x: x + rand(-0.5, 0.5),
+        y: y + rand(-0.4, 0.4),
+        vx: rand(-9, 9),
+        vy: rand(-2, 11),
+        life: rand(0.4, 0.95),
+        age: 0,
+        r: rand(1.4, 3.4),
+        col,
+      });
+    }
+  }
+
+  function onBirdHit(b) {
+    if (b.hit || state !== STATE.PLAY || bladder.blown) return;
+    b.hit = true;
+    b.scored = true;
+    b.vx += rand(-8, 8);
+    b.vy += rand(3, 8);
+    shake = 10;
+    flash = 0.22;
+    birdSquawk();
+    emitFeathers(b.x, b.y, b.kind);
+
+    const kp = kiteScreenPos();
+    kite.vpos += (b.x > kp.x ? -1 : 1) * rand(5, 9);
+    kite.vh += rand(-6.5, -1.2);
+    kite.pos = clamp(kite.pos + rand(-0.28, 0.28), -0.98, 0.98);
+    kite.h = clamp(kite.h + rand(-0.18, -0.04), 0.16, 0.98);
+    rider.vx *= 0.78;
+    if (!rider.onWater) rider.vy += rand(-2, 6);
+
+    const alreadyTorn = kite.torn;
+    kite.torn = true;
+    const fatal = alreadyTorn || kite.h < 0.26 || Math.random() < 0.38;
+    if (fatal) {
+      popup("BIRD STRIKE", "#ffd36a", true);
+      beginWipe("bird");
+    } else {
+      addScore(80, "BIRD STRIKE", "#ffb36b", true);
+    }
+  }
+
+  function stepBirds(dt) {
+    if (state === STATE.PLAY && !bladder.blown) {
+      birdClock -= dt;
+      if (birdClock <= 0 && birds.length < 2) {
+        spawnBird();
+        if (Math.random() < 0.22) spawnBird();
+        birdClock = rand(10, 16);
+      }
+    }
+
+    const kp = kiteScreenPos();
+    for (let i = birds.length - 1; i >= 0; i--) {
+      const b = birds[i];
+      b.age += dt;
+      b.wing += dt * (b.dive ? 18 : 11);
+
+      if (state === STATE.PLAY && !b.hit && !bladder.blown && b.age > 0.35) {
+        b.dive = true;
+        const dx = kp.x - b.x;
+        const dy = kp.y - b.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const spd = b.kind === "osprey" ? 16.5 : 14.2;
+        const aim = b.kind === "osprey" ? 0.54 : 0.44;
+        const k = 1 - Math.pow(1 - aim, dt * 7);
+        b.vx = lerp(b.vx, (dx / dist) * spd, k);
+        b.vy = lerp(b.vy, (dy / dist) * spd, k);
+
+        const hitR = b.kind === "osprey" ? 3.5 : 3.0;
+        if (dist < hitR) {
+          onBirdHit(b);
+        } else if (!b.scored && dist < 7.2 && b.age > 0.7) {
+          b.close = true;
+        } else if (b.close && !b.hit && !b.scored && dist > 5.6) {
+          b.scored = true;
+          addScore(140, "DODGED", "#c8f7ff", false);
+        }
+      }
+
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      if (b.age > 6.5 || Math.abs(b.x - rider.x) > 90) birds.splice(i, 1);
+    }
+  }
+
+  function spawnBarge() {
+    const units = Math.random() < 0.35 ? 2 : 3;
+    const bargeLen = 20;
+    const tugLen = 14;
+    const gap = 2.4;
+    const len = tugLen + units * bargeLen + (units + 1) * gap;
+    barges.push({
+      x: rider.x + rand(96, 150),
+      vx: -rand(2.3, 3.5),
+      units,
+      tugLen,
+      bargeLen,
+      gap,
+      len,
+      horned: false,
+    });
+    popup("BARGE UPRIVER", "#d8c49a", false);
+  }
+
+  function stepBarges(dt) {
+    if (state === STATE.PLAY && !bladder.blown) {
+      bargeClock -= dt;
+      if (bargeClock <= 0 && barges.length === 0) {
+        spawnBarge();
+        bargeClock = rand(24, 40);
+      }
+    }
+
+    for (let i = barges.length - 1; i >= 0; i--) {
+      const b = barges[i];
+      b.x += b.vx * dt;
+      if (!b.horned && b.x - rider.x < 58 && rider.x < b.x + b.len + 20) {
+        b.horned = true;
+        bargeHorn();
+      }
+      if (state === STATE.PLAY && !bladder.blown) {
+        const deck = 3.4;
+        if (rider.x > b.x - 1.1 && rider.x < b.x + b.len + 1.1 && rider.y < deck + 0.55) {
+          crashThud();
+          beginWipe("barge");
+        }
+      }
+      if (b.x + b.len < rider.x - 70) barges.splice(i, 1);
+    }
+  }
+
+  function drawBarges(g) {
+    for (const b of barges) {
+      const sx = wx(b.x);
+      if (sx > W + 80 || sx + b.len * PX < -80) continue;
+      const sy = wy(0);
+      g.save();
+
+      // wake
+      g.fillStyle = "rgba(210,236,250,0.22)";
+      g.beginPath();
+      g.moveTo(sx - 18, sy + 6);
+      g.lineTo(sx + b.len * PX + 24, sy + 4);
+      g.lineTo(sx + b.len * PX + 8, sy + 18);
+      g.lineTo(sx + 10, sy + 20);
+      g.closePath();
+      g.fill();
+
+      let x = b.x + b.gap;
+      for (let u = 0; u < b.units; u++) {
+        const bx = wx(x);
+        const bw = b.bargeLen * PX;
+        const deckY = sy - 28;
+        g.fillStyle = "rgba(10,16,22,0.35)";
+        g.fillRect(bx - 4, sy + 4, bw + 8, 10);
+        g.fillStyle = "#2a241c";
+        g.fillRect(bx, deckY, bw, 34);
+        g.fillStyle = "#4a3a2a";
+        g.fillRect(bx + 3, deckY + 4, bw - 6, 10);
+        // grain hoppers
+        const hops = 3;
+        const hw = (bw - 16) / hops;
+        for (let h = 0; h < hops; h++) {
+          const hx = bx + 8 + h * hw;
+          g.fillStyle = "#6a5340";
+          g.beginPath();
+          g.moveTo(hx, deckY + 6);
+          g.lineTo(hx + hw * 0.5, deckY - 28);
+          g.lineTo(hx + hw - 4, deckY + 6);
+          g.closePath();
+          g.fill();
+          g.fillStyle = "#8a6a48";
+          g.fillRect(hx + 3, deckY + 6, hw - 10, 12);
+        }
+        g.fillStyle = "rgba(255,220,160,0.45)";
+        g.font = "700 9px Trebuchet MS, sans-serif";
+        g.textAlign = "center";
+        g.fillText("COLUMBIA GRAIN", bx + bw * 0.5, deckY + 20);
+        x += b.bargeLen + b.gap;
+      }
+
+      // tug pushing from the upriver end
+      const tx = wx(x);
+      const tw = b.tugLen * PX;
+      const ty = sy - 28;
+      g.fillStyle = "#1c1a16";
+      g.fillRect(tx, ty + 10, tw, 22);
+      g.fillStyle = "#c45a22";
+      g.fillRect(tx + 8, ty - 18, tw * 0.55, 30);
+      g.fillStyle = "#2a4050";
+      g.fillRect(tx + 14, ty - 34, tw * 0.36, 18);
+      g.fillStyle = "#d8e6f0";
+      g.fillRect(tx + 18, ty - 30, 10, 8);
+      g.fillRect(tx + 30, ty - 30, 8, 8);
+      // stack
+      g.fillStyle = "#2a221c";
+      g.fillRect(tx + tw * 0.72, ty - 40, 8, 28);
+      g.fillStyle = "rgba(200,200,200,0.35)";
+      const puff = time * 0.7;
+      g.beginPath();
+      g.arc(tx + tw * 0.72 + 4 + Math.sin(puff) * 3, ty - 48 - (puff % 1) * 10, 6, 0, TWO_PI);
+      g.arc(tx + tw * 0.72 + 10, ty - 58, 5, 0, TWO_PI);
+      g.fill();
+      g.fillStyle = "#e8d2a0";
+      g.font = "800 9px Trebuchet MS, sans-serif";
+      g.textAlign = "center";
+      g.fillText("GORGE", tx + tw * 0.38, ty + 2);
+      // bow fender
+      g.fillStyle = "#3a3028";
+      g.beginPath();
+      g.moveTo(tx + tw, ty + 10);
+      g.lineTo(tx + tw + 10, ty + 22);
+      g.lineTo(tx + tw, ty + 32);
+      g.fill();
+
+      g.restore();
+    }
+  }
+
+  function drawBirds(g) {
+    for (const b of birds) {
+      const x = wx(b.x);
+      const y = wy(b.y);
+      if (x < -40 || x > W + 40 || y < -40 || y > H + 40) continue;
+      const flap = Math.sin(b.wing);
+      const osprey = b.kind === "osprey";
+      g.save();
+      g.translate(x, y);
+      g.rotate(Math.atan2(-b.vy, b.vx) * 0.45);
+      if (b.vx < 0) g.scale(-1, 1);
+
+      // wings
+      g.fillStyle = osprey ? "#6a4a2c" : "#f2f2f6";
+      g.beginPath();
+      g.ellipse(-2, flap * 5, osprey ? 16 : 13, osprey ? 4.2 : 3.4, -0.35 + flap * 0.7, 0, TWO_PI);
+      g.ellipse(10, -flap * 5, osprey ? 16 : 13, osprey ? 4.2 : 3.4, 0.35 - flap * 0.7, 0, TWO_PI);
+      g.fill();
+      if (osprey) {
+        g.fillStyle = "#efe6d2";
+        g.beginPath();
+        g.ellipse(4, 1, 7, 3.2, 0, 0, TWO_PI);
+        g.fill();
+      }
+      // body
+      g.fillStyle = osprey ? "#4a3220" : "#ececf2";
+      g.beginPath();
+      g.ellipse(4, 1, osprey ? 9 : 7.5, osprey ? 4.2 : 3.4, 0, 0, TWO_PI);
+      g.fill();
+      // head
+      g.fillStyle = osprey ? "#efe6d2" : "#ffffff";
+      g.beginPath();
+      g.arc(12, 0, osprey ? 3.6 : 3, 0, TWO_PI);
+      g.fill();
+      g.fillStyle = "#f2a030";
+      g.beginPath();
+      g.moveTo(14.5, 0.4);
+      g.lineTo(19, 1.2);
+      g.lineTo(14.5, 2.2);
+      g.fill();
+      g.fillStyle = "#1a1410";
+      g.beginPath();
+      g.arc(12.6, -0.6, 0.7, 0, TWO_PI);
+      g.fill();
+      // tail
+      g.fillStyle = osprey ? "#2c2016" : "#d0d4dc";
+      g.beginPath();
+      g.moveTo(-4, 0);
+      g.lineTo(-12, -3);
+      g.lineTo(-11, 3);
+      g.fill();
+      g.restore();
+    }
+  }
+
   // ---------- scoring ----------
   function addScore(n, label, color, big) {
     const mult = 1 + run.combo * 0.35;
@@ -748,6 +1177,12 @@
     bladder.blown = false;
     bladder.t = 0;
     bladder.next = rand(11, 24);
+    kite.torn = false;
+    chaos.next = rand(12, 18);
+    birds.length = 0;
+    barges.length = 0;
+    birdClock = rand(7, 12);
+    bargeClock = rand(14, 22);
     layout.repair.visible = false;
     shopDance.active = false;
     shopDance.t = 0;
@@ -903,6 +1338,10 @@
     const wind01 = clamp((wind.knots - 6) / 24, 0, 1.35);
     const sendBoost = kite.send * (0.55 + 0.7 * (1 - kite.h));
     kite.pull = wind01 * (0.28 + 0.72 * zone) + sendBoost * 0.22;
+    if (kite.torn) {
+      kite.pull *= 0.84;
+      kite.pos += Math.sin(time * 14) * 0.004;
+    }
 
     kite.angle = Math.atan2(-1, kite.pos * 1.4);
 
@@ -1423,6 +1862,30 @@
     g.lineTo(0, 4);
     g.stroke();
 
+    if (kite.torn) {
+      g.strokeStyle = "#1a120c";
+      g.lineWidth = 2.2;
+      g.beginPath();
+      g.moveTo(-10, -18);
+      g.lineTo(-3, -5);
+      g.lineTo(7, -14);
+      g.lineTo(12, 1);
+      g.stroke();
+      g.fillStyle = "rgba(18,10,6,0.5)";
+      g.beginPath();
+      g.moveTo(-8, -16);
+      g.lineTo(1, -3);
+      g.lineTo(9, -12);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#c45a22";
+      g.beginPath();
+      g.moveTo(10, -8);
+      g.quadraticCurveTo(18, -2 + Math.sin(time * 16) * 3, 22, 6);
+      g.quadraticCurveTo(14, 2, 8, -2);
+      g.fill();
+    }
+
     // tips
     g.fillStyle = "#1b2430";
     g.beginPath();
@@ -1508,7 +1971,9 @@
   function drawSpray(g) {
     for (const p of spray) {
       const a = 1 - p.age / p.life;
-      g.fillStyle = "rgba(220,240,255," + (a * 0.7).toFixed(3) + ")";
+      g.fillStyle = p.col
+        ? p.col + (a * 0.75).toFixed(3) + ")"
+        : "rgba(220,240,255," + (a * 0.7).toFixed(3) + ")";
       const x = wx(p.x);
       const y = wy(p.y);
       g.beginPath();
@@ -2202,6 +2667,9 @@
       stepKite(dt, c);
       stepRider(dt, c);
       maybeExplode(dt);
+      maybeChaos(dt);
+      stepBirds(dt);
+      stepBarges(dt);
       stepCam(dt);
       stepParticles(dt);
       setWindHum(wind.knots, rider.vx);
@@ -2212,6 +2680,8 @@
       rider.vy -= 16 * dt;
       kite.h = lerp(kite.h, 0.18, 0.02);
       kite.pos += dt * 0.15;
+      stepBirds(dt);
+      stepBarges(dt);
       stepCam(dt);
       stepParticles(dt);
       if (startLatched && wipe.t > 0.35 && !shopDance.active) {
@@ -2238,6 +2708,7 @@
     windStreaks(ctx);
     mountains(ctx);
     water(ctx);
+    drawBarges(ctx);
 
     if (state === STATE.TITLE) {
       layout.repair.visible = false;
@@ -2250,6 +2721,7 @@
       const ky = wy(kp.y);
       drawLines(ctx, kx, ky, rx, ry - 8);
       drawKite(ctx, kx, ky);
+      drawBirds(ctx);
       drawSpray(ctx);
       drawRider(ctx, rx, ry);
       drawPopups(ctx);
