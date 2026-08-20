@@ -1,4 +1,4 @@
-// Gorge Kite — Columbia River west-wind session
+// Airtime Kite — Hood River session
 // Single-file canvas game. No frameworks. No build.
 
 (() => {
@@ -8,7 +8,8 @@
   const ctx = canvas.getContext("2d", { alpha: false, desynchronized: true });
 
   const TWO_PI = Math.PI * 2;
-  const BEST_KEY = "gorgeKiteBestV1";
+  const BEST_KEY = "airtimeKiteBestV1";
+  const REPAIR_URL = "https://airtimekite.com";
 
   const STATE = { TITLE: 0, PLAY: 1, WIPE: 2 };
 
@@ -219,6 +220,7 @@
     pop: { x: 0, y: 0, r: 48 },
     grab: { x: 0, y: 0, r: 38 },
     edge: { x: 0, y: 0, r: 34 },
+    repair: { x: 0, y: 0, w: 0, h: 0, visible: false },
   };
 
   function layoutTouch(w, h) {
@@ -238,12 +240,30 @@
     layout.edge.y = layout.pop.y - layout.pop.r - layout.edge.r - 14;
   }
 
+  function hitRepair(p) {
+    const b = layout.repair;
+    if (!b.visible) return false;
+    return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+  }
+
+  function openRepair() {
+    try {
+      window.open(REPAIR_URL, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      window.location.href = REPAIR_URL;
+    }
+  }
+
   function onPointerDown(e) {
     touchMode = e.pointerType === "touch" || e.pointerType === "pen";
     const p = canvasPos(e);
     pointer.down = true;
     pointer.x = p.x;
     pointer.y = p.y;
+    if (state === STATE.WIPE && hitRepair(p)) {
+      openRepair();
+      return;
+    }
     startLatched = true;
     ensureAudio();
     document.body.classList.add("started");
@@ -300,6 +320,7 @@
     pointer.x = p.x;
     pointer.y = p.y;
     if (joy.active && e.pointerId === joy.id) updateJoy(p);
+    canvas.style.cursor = (state === STATE.WIPE && hitRepair(p)) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
   }
 
   function onPointerUp(e) {
@@ -412,6 +433,13 @@
     why: "",
     tag: "",
     final: null,
+    quote: null,
+  };
+
+  const bladder = {
+    blown: false,
+    t: 0,
+    next: 14,
   };
 
   const spray = [];
@@ -445,7 +473,34 @@
       "RELAUNCH PRACTICE",
       "LINES IN THE DRINK",
     ],
+    bladder: [
+      "BLADDER EXPLODED.",
+      "THERE GOES THE LEADING EDGE",
+      "POP. THAT'S A BLADDER.",
+      "SOMEONE CALL AIRTIME",
+      "THAT KITE JUST SIGHED",
+    ],
   };
+
+  const BLADDER_PARTS = [
+    "leading-edge bladder",
+    "strut bladder",
+    "both struts",
+    "leading edge and a valve",
+    "blown bladder and a seam",
+    "one-point hose and a strut",
+    "the whole leading edge",
+  ];
+  const BLADDER_NOTES = [
+    "Today if you drop it at the shop.",
+    "We've got that one on the shelf.",
+    "Drop it at 1538 Cascade.",
+    "This afternoon if you bring it by 4.",
+    "Classic Gorge day. We'll get you riding.",
+    "Hood River special — back on the water soon.",
+    "Leave it at Airtime. We'll call when it's done.",
+    "Couple hours if the sewing machine is free.",
+  ];
 
   // ---------- particles ----------
   function emitSpray(n, x, y, vx, heavy) {
@@ -489,6 +544,71 @@
       life: big ? 1.5 : 1.1,
       big: !!big,
     });
+  }
+
+  function popBladderSfx() {
+    if (!audio.ctx) return;
+    const ac = audio.ctx;
+    blip(86, 0.2, "square", 0.11);
+    blip(190, 0.14, "sawtooth", 0.07);
+    const n = ac.createBufferSource();
+    const buf = ac.createBuffer(1, ac.sampleRate * 0.35, ac.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    n.buffer = buf;
+    const f = ac.createBiquadFilter();
+    f.type = "bandpass";
+    f.frequency.value = 420;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.16, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.4);
+    n.connect(f);
+    f.connect(g);
+    g.connect(ac.destination);
+    n.start();
+  }
+
+  function makeEstimate() {
+    const steps = 45 + Math.round(Math.random() * 27) * 5;
+    return {
+      price: clamp(steps, 45, 180),
+      part: pick(BLADDER_PARTS),
+      note: pick(BLADDER_NOTES),
+    };
+  }
+
+  function explodeBladder() {
+    if (bladder.blown || state !== STATE.PLAY) return;
+    bladder.blown = true;
+    bladder.t = 0;
+    kite.pull = 0;
+    kite.send = 0;
+    shake = 16;
+    flash = 0.55;
+    popup("BLADDER EXPLODED.", "#ffb080", true);
+    const kp = kiteScreenPos();
+    for (let i = 0; i < 30; i++) {
+      spray.push({
+        x: kp.x + rand(-1.4, 1.4),
+        y: kp.y + rand(-0.8, 0.5),
+        vx: rand(-11, 11),
+        vy: rand(-3, 15),
+        life: rand(0.4, 1.15),
+        age: 0,
+        r: rand(2, 7),
+      });
+    }
+    popBladderSfx();
+  }
+
+  function maybeExplode(dt) {
+    if (bladder.blown || state !== STATE.PLAY) return;
+    if (runTime < 6.5) return;
+    bladder.next -= dt;
+    if (bladder.next <= 0) {
+      if (Math.random() < 0.52 + clamp(kite.pull, 0, 1) * 0.12) explodeBladder();
+      else bladder.next = rand(8, 18);
+    }
   }
 
   // ---------- scoring ----------
@@ -586,6 +706,11 @@
     flash = 0;
     wipe.t = 0;
     wipe.final = null;
+    wipe.quote = null;
+    bladder.blown = false;
+    bladder.t = 0;
+    bladder.next = rand(11, 24);
+    layout.repair.visible = false;
   }
 
   function startPlay() {
@@ -604,6 +729,7 @@
     wipe.t = 0;
     wipe.why = kind;
     wipe.tag = pick(WIPE_LINES[kind] || WIPE_LINES.crash);
+    wipe.quote = kind === "bladder" ? makeEstimate() : null;
     rider.spinV = rand(-10, 10);
     rider.vy = Math.min(rider.vy, -2);
     shake = 12;
@@ -695,6 +821,18 @@
   }
 
   function stepKite(dt, c) {
+    if (bladder.blown) {
+      bladder.t += dt;
+      kite.pull = 0;
+      kite.send = lerp(kite.send, 0, 1 - Math.pow(0.02, dt));
+      kite.h = lerp(kite.h, 0.2, 1 - Math.pow(0.08, dt));
+      kite.pos += Math.sin(bladder.t * 18) * 0.014;
+      kite.vpos *= 0.9;
+      kite.vh *= 0.9;
+      if (bladder.t > 0.58 && state === STATE.PLAY) beginWipe("bladder");
+      return;
+    }
+
     const steer = 2.15;
     const wantPos = kite.pos + c.kx * steer * dt * 1.8;
     const wantH = kite.h - c.ky * steer * dt * 1.15;
@@ -765,7 +903,7 @@
       const loft = clamp((kite.h - 0.45) * 1.4, 0, 1);
       const sendUp = Math.max(0, kite.vh) + kite.send * 0.35;
       if (c.pop && loaded) {
-        const pop = 7.2 + rider.vx * 0.28 + pull * 4.2 + sendUp * 2.4 + loft * 2.6;
+        const pop = 11.4 + rider.vx * 0.4 + pull * 6.2 + sendUp * 3.5 + loft * 4.0;
         rider.vy = pop;
         rider.onWater = false;
         rider.spinV = (kite.vpos + (c.grab ? 2 : 0.4)) * 1.1;
@@ -782,7 +920,7 @@
         shake = 4;
       } else if (c.pop && !loaded && rider.vx > 3) {
         // weak hop
-        rider.vy = 3.2 + pull * 2;
+        rider.vy = 5.2 + pull * 3.4;
         rider.onWater = false;
         run.jumpCount += 1;
         run.thisJump.air = 0;
@@ -799,10 +937,10 @@
       }
     } else {
       // airborne
-      const kiteLift = pull * 6.5 * (0.45 + kite.h * 0.7);
-      const loopLift = Math.abs(kite.loopAccum) > 1.2 ? 5.5 * pull : 0;
-      rider.vy += (-18 + kiteLift + loopLift) * dt;
-      rider.vy = clamp(rider.vy, -22, 28);
+      const kiteLift = pull * 8.4 * (0.52 + kite.h * 0.72);
+      const loopLift = Math.abs(kite.loopAccum) > 1.2 ? 6.8 * pull : 0;
+      rider.vy += (-15.2 + kiteLift + loopLift) * dt;
+      rider.vy = clamp(rider.vy, -24, 38);
       rider.y += rider.vy * dt;
       run.thisJump.air += dt;
       run.air += dt;
@@ -842,6 +980,9 @@
       if (run.thisJump.air > 1.45 && run.thisJump.scoredJump && run.thisJump.air < 1.45 + dt) {
         addScore(100, "BIG AIR", "#c8e7ff", false);
       }
+      if (run.thisJump.air > 2.6 && run.thisJump.scoredJump && run.thisJump.air < 2.6 + dt) {
+        addScore(180, "MEGA AIR", "#ffe08a", true);
+      }
 
       if (rider.y <= 0 && rider.vy <= 0) {
         // land
@@ -850,7 +991,7 @@
         rider.onWater = true;
         emitSplash(rider.x, 0, clamp(hard / 16, 0.25, 1.4));
         shake = hard * 0.45;
-        if (hard > 17 && Math.abs(rider.spin % TWO_PI) > 1.2 && !run.thisJump.grabbed) {
+        if (!bladder.blown && hard > 24 && Math.abs(rider.spin % TWO_PI) > 1.55 && !run.thisJump.grabbed) {
           beginWipe("crash");
           return;
         }
@@ -869,6 +1010,7 @@
 
     // wipeout checks — short grace so the drop-in is always rideable
     if (state !== STATE.PLAY) return;
+    if (bladder.blown) return;
     if (runTime < 2.2) {
       rider.yank = 0;
       rider.stall = 0;
@@ -935,7 +1077,7 @@
   const cam = { x: 0, y: 0 };
   function stepCam(dt) {
     const targetX = rider.x * PX + 80;
-    const targetY = -rider.y * PX * 0.45;
+    const targetY = -rider.y * PX * 0.62;
     cam.x = lerp(cam.x, targetX, 1 - Math.pow(0.05, dt));
     cam.y = lerp(cam.y, targetY, 1 - Math.pow(0.08, dt));
     shake *= Math.pow(0.04, dt);
@@ -1196,22 +1338,33 @@
     const bank = kite.vpos * 0.18 + kite.pos * 0.25;
     g.save();
     g.translate(kx, ky);
-    g.rotate(bank);
-    const s = 1 + clamp(kite.pull * 0.15, 0, 0.25);
-    g.scale(s, s);
+    g.rotate(bank + (bladder.blown ? Math.sin(bladder.t * 22) * 0.4 : 0));
+    let s = 1 + clamp(kite.pull * 0.15, 0, 0.25);
+    if (bladder.blown) {
+      const sag = clamp(1 - bladder.t * 1.15, 0.32, 1);
+      g.scale(s * sag, s * clamp(1 - bladder.t * 1.7, 0.16, 1));
+    } else {
+      g.scale(s, s);
+    }
 
     // canopy
     g.beginPath();
     g.moveTo(-46, 6);
-    g.quadraticCurveTo(-20, -22, 0, -26);
-    g.quadraticCurveTo(20, -22, 46, 6);
-    g.quadraticCurveTo(16, 2, 0, 4);
-    g.quadraticCurveTo(-16, 2, -46, 6);
+    g.quadraticCurveTo(-20, bladder.blown ? 8 : -22, 0, bladder.blown ? 10 : -26);
+    g.quadraticCurveTo(20, bladder.blown ? 8 : -22, 46, 6);
+    g.quadraticCurveTo(16, bladder.blown ? 16 : 2, 0, bladder.blown ? 18 : 4);
+    g.quadraticCurveTo(-16, bladder.blown ? 16 : 2, -46, 6);
     const kg = g.createLinearGradient(-46, -26, 46, 8);
-    kg.addColorStop(0, "#ff8a2b");
-    kg.addColorStop(0.45, "#ffce6a");
-    kg.addColorStop(0.55, "#fff6d8");
-    kg.addColorStop(1, "#2ec4b6");
+    if (bladder.blown) {
+      kg.addColorStop(0, "#b86a3a");
+      kg.addColorStop(0.5, "#c9a06a");
+      kg.addColorStop(1, "#3a7a72");
+    } else {
+      kg.addColorStop(0, "#ff8a2b");
+      kg.addColorStop(0.45, "#ffce6a");
+      kg.addColorStop(0.55, "#fff6d8");
+      kg.addColorStop(1, "#2ec4b6");
+    }
     g.fillStyle = kg;
     g.fill();
     g.strokeStyle = "rgba(40,20,10,0.35)";
@@ -1345,10 +1498,10 @@
     g.font = "800 18px Trebuchet MS, Segoe UI, sans-serif";
     g.fillStyle = "#fff4d2";
     g.textAlign = "left";
-    g.fillText("GORGE KITE", pad, pad);
+    g.fillText("AIRTIME KITE", pad, pad);
     g.font = "600 12px Trebuchet MS, Segoe UI, sans-serif";
     g.fillStyle = "rgba(255,236,200,0.65)";
-    g.fillText("west wind session", pad, pad + 20);
+    g.fillText("Hood River  ·  the Gorge", pad, pad + 20);
 
     // score
     g.textAlign = "right";
@@ -1479,11 +1632,11 @@
     g.shadowColor = "rgba(0,0,0,0.45)";
     g.shadowBlur = 16;
     g.font = "800 " + clamp(W * 0.08, 42, 84) + "px Trebuchet MS, Avenir Next, Segoe UI, sans-serif";
-    g.fillText("GORGE KITE", W * 0.5, H * 0.16);
+    g.fillText("AIRTIME KITE", W * 0.5, H * 0.16);
     g.shadowBlur = 0;
     g.font = "600 16px Trebuchet MS, sans-serif";
     g.fillStyle = "rgba(255,226,170,0.85)";
-    g.fillText("West wind. High water. Send it.", W * 0.5, H * 0.16 + clamp(W * 0.08, 42, 84) * 0.55);
+    g.fillText("Hood River. Big air. We fix the rest.", W * 0.5, H * 0.16 + clamp(W * 0.08, 42, 84) * 0.55);
 
     const boxW = Math.min(520, W - 48);
     const boxX = (W - boxW) / 2;
@@ -1521,34 +1674,154 @@
     g.restore();
   }
 
+  function drawBrogan(g, x, y) {
+    g.save();
+    g.translate(x, y);
+    g.fillStyle = "#3a2a1c";
+    g.fillRect(-72, 52, 144, 14);
+    g.fillStyle = "#c4a06a";
+    g.fillRect(-76, 46, 152, 9);
+    g.fillStyle = "#2a4a5c";
+    g.beginPath();
+    g.ellipse(0, 30, 22, 26, 0, 0, TWO_PI);
+    g.fill();
+    g.fillStyle = "#d27a2c";
+    g.fillRect(-16, 14, 32, 28);
+    g.fillStyle = "#fff6d8";
+    g.fillRect(6, 20, 24, 11);
+    g.fillStyle = "#1a2430";
+    g.font = "700 7px Trebuchet MS, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("BROGAN", 18, 26);
+    g.fillStyle = "#e0b090";
+    g.beginPath();
+    g.arc(0, -4, 16, 0, TWO_PI);
+    g.fill();
+    g.fillStyle = "#3b2a22";
+    g.beginPath();
+    g.arc(0, -8, 16, Math.PI, TWO_PI);
+    g.fill();
+    g.fillStyle = "#1a1a1a";
+    g.beginPath();
+    g.arc(-5, -6, 1.7, 0, TWO_PI);
+    g.arc(5, -6, 1.7, 0, TWO_PI);
+    g.fill();
+    g.strokeStyle = "#5a3020";
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.arc(0, 0, 6, 0.15, Math.PI - 0.15);
+    g.stroke();
+    g.save();
+    g.rotate(0.16);
+    g.fillStyle = "#f0e6c8";
+    g.fillRect(20, 10, 18, 24);
+    g.fillStyle = "#4a5560";
+    g.fillRect(22, 14, 14, 2);
+    g.fillRect(22, 18, 12, 2);
+    g.fillRect(22, 22, 13, 2);
+    g.restore();
+    g.restore();
+  }
+
+  function drawRepairButton(g, label, y) {
+    const bw = Math.min(320, W - 48);
+    const bh = 46;
+    const bx = (W - bw) / 2;
+    const by = y;
+    layout.repair.x = bx;
+    layout.repair.y = by;
+    layout.repair.w = bw;
+    layout.repair.h = bh;
+    layout.repair.visible = wipe.t > 0.2;
+    const pulse = 0.75 + Math.sin(time * 4) * 0.25;
+    g.fillStyle = "rgba(226,122,42," + pulse.toFixed(2) + ")";
+    roundRect(g, bx, by, bw, bh, 10);
+    g.fill();
+    g.strokeStyle = "rgba(255,236,200,0.85)";
+    g.lineWidth = 2;
+    g.stroke();
+    g.fillStyle = "#1a1208";
+    g.font = "800 17px Trebuchet MS, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(label, W * 0.5, by + bh * 0.5);
+  }
+
   function wipeScreen(g) {
-    g.fillStyle = "rgba(6,10,16," + clamp(wipe.t * 0.55, 0, 0.48) + ")";
+    const bladderWipe = wipe.why === "bladder";
+    g.fillStyle = "rgba(6,10,16," + clamp(wipe.t * 0.55, 0, 0.52) + ")";
     g.fillRect(0, 0, W, H);
     g.save();
     g.textAlign = "center";
-    g.fillStyle = "#ffd28a";
-    g.font = "800 " + clamp(W * 0.055, 28, 52) + "px Trebuchet MS, sans-serif";
-    g.fillText(wipe.tag, W * 0.5, H * 0.28);
+    g.textBaseline = "alphabetic";
+    g.fillStyle = bladderWipe ? "#ffb080" : "#ffd28a";
+    g.font = "800 " + clamp(W * 0.05, 26, 48) + "px Trebuchet MS, sans-serif";
+    const top = H * (bladderWipe ? 0.12 : 0.22);
+    g.fillText(wipe.tag, W * 0.5, top);
     if (wipe.final) {
-      g.font = "700 36px Trebuchet MS, sans-serif";
+      g.font = "700 32px Trebuchet MS, sans-serif";
       g.fillStyle = "#ffffff";
-      g.fillText("" + wipe.final.score, W * 0.5, H * 0.28 + 56);
-      g.font = "600 14px Trebuchet MS, sans-serif";
+      g.fillText("" + wipe.final.score, W * 0.5, top + 42);
+      g.font = "600 13px Trebuchet MS, sans-serif";
       g.fillStyle = "rgba(255,255,255,0.7)";
-      g.fillText(Math.round(wipe.final.dist) + " m    ·    " + wipe.final.air.toFixed(1) + "s air    ·    " + run.jumpCount + " jumps    ·    " + run.loops + " loops", W * 0.5, H * 0.28 + 88);
+      g.fillText(
+        Math.round(wipe.final.dist) + " m    ·    " + wipe.final.air.toFixed(1) + "s air    ·    " +
+          run.jumpCount + " jumps    ·    " + run.loops + " loops",
+        W * 0.5,
+        top + 68
+      );
       if (wipe.final.record) {
         g.fillStyle = "#ffe08a";
-        g.font = "800 16px Trebuchet MS, sans-serif";
-        g.fillText("NEW BEST RUN", W * 0.5, H * 0.28 + 114);
+        g.font = "800 15px Trebuchet MS, sans-serif";
+        g.fillText("NEW BEST RUN", W * 0.5, top + 90);
       } else if (best) {
         g.fillStyle = "rgba(255,220,150,0.65)";
-        g.fillText("best  " + best.score, W * 0.5, H * 0.28 + 114);
+        g.fillText("best  " + best.score, W * 0.5, top + 90);
       }
     }
+
+    if (bladderWipe && wipe.quote) {
+      const cardW = Math.min(540, W - 36);
+      const cardH = Math.min(148, H * 0.28);
+      const cardX = (W - cardW) / 2;
+      const cardY = top + 108;
+      g.fillStyle = "rgba(10,18,26,0.72)";
+      roundRect(g, cardX, cardY, cardW, cardH, 12);
+      g.fill();
+      g.strokeStyle = "rgba(255,200,140,0.35)";
+      g.lineWidth = 1.5;
+      g.stroke();
+      drawBrogan(g, cardX + 62, cardY + cardH * 0.42);
+      g.textAlign = "left";
+      g.textBaseline = "top";
+      const tx = cardX + 122;
+      g.font = "700 12px Trebuchet MS, sans-serif";
+      g.fillStyle = "rgba(255,226,170,0.85)";
+      g.fillText("Brogan at Airtime  ·  Hood River", tx, cardY + 14);
+      g.font = "800 20px Trebuchet MS, sans-serif";
+      g.fillStyle = "#fff6d8";
+      g.fillText("$" + wipe.quote.price, tx, cardY + 34);
+      g.font = "700 14px Trebuchet MS, sans-serif";
+      g.fillText("on the " + wipe.quote.part, tx, cardY + 58);
+      g.font = "600 12px Trebuchet MS, sans-serif";
+      g.fillStyle = "rgba(255,236,200,0.8)";
+      g.fillText(wipe.quote.note, tx, cardY + 80);
+      g.font = "600 11px Trebuchet MS, sans-serif";
+      g.fillStyle = "rgba(255,255,255,0.5)";
+      g.fillText("AIRTIME  ·  1538 Cascade Ave  ·  Hood River, OR", tx, cardY + 86);
+      drawRepairButton(g, "Send it to Airtime", cardY + cardH + 16);
+    } else {
+      drawRepairButton(g, "Book a repair", H * 0.62);
+    }
+
     const pulse = 0.6 + Math.sin(time * 5) * 0.4;
-    g.font = "800 16px Trebuchet MS, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "alphabetic";
+    g.font = "800 15px Trebuchet MS, sans-serif";
     g.fillStyle = "rgba(255,210,110," + pulse.toFixed(2) + ")";
-    g.fillText("space  /  tap    one more", W * 0.5, H * 0.72);
+    const hintY = layout.repair.visible ? layout.repair.y + layout.repair.h + 28 : H * 0.78;
+    g.fillText("space  /  tap    one more", W * 0.5, hintY);
     g.restore();
   }
 
@@ -1586,6 +1859,7 @@
       stepWind(dt);
       stepKite(dt, c);
       stepRider(dt, c);
+      maybeExplode(dt);
       stepCam(dt);
       stepParticles(dt);
       setWindHum(wind.knots, rider.vx);
@@ -1617,6 +1891,7 @@
     water(ctx);
 
     if (state === STATE.TITLE) {
+      layout.repair.visible = false;
       titleScreen(ctx);
     } else {
       const kp = kiteScreenPos();
