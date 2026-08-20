@@ -10,6 +10,11 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
+  const VERSION = "2026.08.20.4";
+  const versionEl = document.getElementById("version");
+  if (versionEl) versionEl.textContent = VERSION;
+  const repairLink = document.getElementById("repair-link");
+  if (repairLink) repairLink.href = REPAIR_URL;
 
   const STATE = { TITLE: 0, PLAY: 1, WIPE: 2 };
 
@@ -262,30 +267,8 @@
     return false;
   }
 
-  function startShopDance() {
-    if (shopDance.active) return;
-    shopDance.active = true;
-    shopDance.t = 0;
-    shopDance.duration = rand(1.5, 2.5);
-    shopDance.opened = false;
-    shopDance.waitTap = false;
-    blip(220, 0.1, "triangle", 0.06);
-    blip(330, 0.14, "sine", 0.05);
-    blip(440, 0.18, "triangle", 0.04);
-  }
-
-  function finishShopDance() {
-    if (launchAirtime()) {
-      shopDance.opened = true;
-      shopDance.active = false;
-      shopDance.waitTap = false;
-    } else {
-      shopDance.waitTap = true;
-    }
-  }
-
   function openRepair() {
-    startShopDance();
+    launchAirtime();
   }
 
   function onPointerDown(e) {
@@ -294,10 +277,6 @@
     pointer.down = true;
     pointer.x = p.x;
     pointer.y = p.y;
-    if (shopDance.active) {
-      if (shopDance.waitTap) finishShopDance();
-      return;
-    }
     if (state === STATE.WIPE && hitRepair(p)) {
       openRepair();
       return;
@@ -358,7 +337,7 @@
     pointer.x = p.x;
     pointer.y = p.y;
     if (joy.active && e.pointerId === joy.id) updateJoy(p);
-    canvas.style.cursor = ((state === STATE.WIPE && hitRepair(p)) || shopDance.active) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
+    canvas.style.cursor = (state === STATE.WIPE && hitRepair(p)) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
   }
 
   function onPointerUp(e) {
@@ -457,6 +436,7 @@
       passed: false,
       scoredJump: false,
       path: 0,
+      peakY: 0,
     },
   };
 
@@ -490,6 +470,9 @@
 
   const barges = [];
   let bargeClock = 18;
+
+  const windsurfers = [];
+  let windsurfClock = 11;
 
   const spray = [];
   const pops = [];
@@ -567,6 +550,13 @@
       "THAT IS NOT A KICKER",
       "COMMERCIAL TRAFFIC",
     ],
+    windsurfer: [
+      "WINDSURFER",
+      "SAIL COLLISION",
+      "THAT WAS A PERSON",
+      "EVENT SITE TRAFFIC",
+      "WATCH THE RIG",
+    ],
   };
 
   const BLADDER_PARTS = [
@@ -581,13 +571,50 @@
   const BLADDER_NOTES = [
     "Today if you drop it at the shop.",
     "We've got that one on the shelf.",
-    "Drop it at 1538 Cascade.",
+    "Drop it at the shop.",
     "This afternoon if you bring it by 4.",
     "Classic Gorge day. We'll get you riding.",
     "Hood River special — back on the water soon.",
     "Leave it at Airtime. We'll call when it's done.",
     "Couple hours if the sewing machine is free.",
   ];
+  const BARGE_PARTS = [
+    "leading edge vs a hopper",
+    "canopy and a bent bar",
+    "torn strut and the chicken loop",
+    "one side of the leading edge",
+    "a wrapped line and a dinged board",
+  ];
+  const CRASH_PARTS = [
+    "stretched lines and a dinged board",
+    "cracked board and a blown valve",
+    "a tweaked bar and the leading edge",
+    "both tips and a seam",
+  ];
+  const LOOP_PARTS = [
+    "a twisted line set",
+    "bridle and a wrapped leading edge",
+    "lines through the canopy",
+    "the bar and a cooked bridle",
+  ];
+  const WATER_PARTS = [
+    "a soaked bladder and a valve",
+    "lines and a rinse",
+    "sand in the valve and a strut",
+    "a soggy leading edge",
+  ];
+  const REPAIR_WIPES = {
+    bladder: true,
+    bird: true,
+    barge: true,
+    crash: true,
+    loopfail: true,
+    waterkite: true,
+  };
+
+  function isRepairWipe(kind) {
+    return !!REPAIR_WIPES[kind];
+  }
 
   // ---------- particles ----------
   function emitSpray(n, x, y, vx, heavy) {
@@ -661,6 +688,34 @@
       return {
         price: clamp(steps + 20, 65, 200),
         part: "canopy shredded",
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "barge") {
+      return {
+        price: clamp(steps + 25, 70, 210),
+        part: pick(BARGE_PARTS),
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "crash") {
+      return {
+        price: clamp(steps + 10, 55, 190),
+        part: pick(CRASH_PARTS),
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "loopfail") {
+      return {
+        price: clamp(steps + 15, 60, 195),
+        part: pick(LOOP_PARTS),
+        note: pick(BLADDER_NOTES),
+      };
+    }
+    if (kind === "waterkite") {
+      return {
+        price: clamp(steps, 45, 160),
+        part: pick(WATER_PARTS),
         note: pick(BLADDER_NOTES),
       };
     }
@@ -753,7 +808,25 @@
   function bargeNear() {
     for (let i = 0; i < barges.length; i++) {
       const b = barges[i];
+      if (b.sinking) continue;
       if (rider.x > b.x - 28 && rider.x < b.x + b.len + 10) return true;
+    }
+    return false;
+  }
+
+  function windsurfNear() {
+    for (let i = 0; i < windsurfers.length; i++) {
+      const w = windsurfers[i];
+      if (rider.x > w.x - 16 && rider.x < w.x + 12) return true;
+    }
+    return false;
+  }
+
+  function bargeOccupies(x, pad) {
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (b.sinking) continue;
+      if (x > b.x - pad && x < b.x + b.len + pad) return true;
     }
     return false;
   }
@@ -761,7 +834,7 @@
   function maybeChaos(dt) {
     if (state !== STATE.PLAY || bladder.blown) return;
     if (runTime < 10) return;
-    if (bargeNear()) {
+    if (bargeNear() || windsurfNear()) {
       chaos.next = Math.max(chaos.next, 3.5);
       return;
     }
@@ -800,6 +873,82 @@
       age: 0,
     });
     if (Math.random() < 0.4) blip(540, 0.06, "triangle", 0.03);
+  }
+
+  function emitBirdBurst(x, y) {
+    for (let i = 0; i < 18; i++) {
+      spray.push({
+        x: x + rand(-0.45, 0.45),
+        y: y + rand(-0.35, 0.35),
+        vx: rand(-16, 16),
+        vy: rand(-4, 18),
+        life: rand(0.28, 0.72),
+        age: 0,
+        r: rand(2, 6),
+        col: Math.random() < 0.55 ? "rgba(255,210,110," : "rgba(255,140,70,",
+      });
+    }
+  }
+
+  function explodeSessionBirds() {
+    let n = 0;
+    for (let i = 0; i < birds.length; i++) {
+      const b = birds[i];
+      if (b.exploded) continue;
+      b.exploded = true;
+      b.hit = true;
+      b.scored = true;
+      b.boomT = 0;
+      b.vx = rand(-16, 16);
+      b.vy = rand(5, 18);
+      emitFeathers(b.x, b.y, b.kind);
+      emitBirdBurst(b.x, b.y);
+      birdSquawk();
+      n += 1;
+    }
+    return n;
+  }
+
+  function sinkSessionBarges() {
+    let n = 0;
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (b.sinking) continue;
+      b.sinking = true;
+      b.sinkT = 0;
+      emitSplash(b.x + b.len * 0.35, 0, 1.25);
+      emitSplash(b.x + b.len * 0.75, 0, 1.05);
+      bargeHorn();
+      n += 1;
+    }
+    if (n) bargeClock = Math.max(bargeClock, 12);
+    return n;
+  }
+
+  function landingOnBarge() {
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (b.sinking) continue;
+      if (bargeObstacleHeight(b, rider.x) > 0) return true;
+    }
+    return false;
+  }
+
+  function isGreatAir() {
+    // Past MEGA AIR and a real peak — weak hops and skim loaded pops do not count.
+    return run.thisJump.scoredJump && run.thisJump.air >= 3.25 && run.thisJump.peakY >= 15.5;
+  }
+
+  function celebrateGreatAir() {
+    const birdsN = explodeSessionBirds();
+    const bargeN = sinkSessionBarges();
+    if (!birdsN && !bargeN) return;
+    if (birdsN) addScore(220 + birdsN * 90, "BIRDS DOWN", "#ffd36a", true);
+    if (bargeN) addScore(380, "BARGE SUNK", "#9ad0ff", true);
+    if (birdsN && bargeN) popup("THE GORGE SAID YES", "#fff6d8", true);
+    shake = Math.max(shake, 11);
+    flash = Math.max(flash, 0.3);
+    whoosh();
   }
 
   function emitFeathers(x, y, kind) {
@@ -892,27 +1041,52 @@
 
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+      if (b.exploded) {
+        b.boomT = (b.boomT || 0) + dt;
+        if (b.boomT > 0.5) {
+          birds.splice(i, 1);
+          continue;
+        }
+      }
       if (b.age > 6.5 || Math.abs(b.x - rider.x) > 90) birds.splice(i, 1);
     }
   }
 
   function spawnBarge() {
-    const units = Math.random() < 0.35 ? 2 : 3;
-    const bargeLen = 20;
-    const tugLen = 14;
-    const gap = 2.4;
+    // 1 grain barge + tug is the usual Columbia traffic; sometimes a double.
+    // Length is tuned so a loaded pop with enough air can clear and land clean.
+    const units = Math.random() < 0.62 ? 1 : 2;
+    const bargeLen = 14;
+    const tugLen = 12;
+    const gap = 2;
     const len = tugLen + units * bargeLen + (units + 1) * gap;
     barges.push({
-      x: rider.x + rand(96, 150),
-      vx: -rand(2.3, 3.5),
+      x: rider.x + rand(88, 138),
+      vx: -rand(2.4, 3.6),
       units,
       tugLen,
       bargeLen,
       gap,
       len,
       horned: false,
+      cleared: false,
+      scored: false,
+      sinking: false,
+      sinkT: 0,
     });
     popup("BARGE UPRIVER", "#d8c49a", false);
+  }
+
+  // Visual heights (PX=10): hoppers ~5.6m, tug stack ~6.8m, deck/couplings ~2.8m.
+  function bargeObstacleHeight(b, x) {
+    if (x < b.x - 0.8 || x > b.x + b.len + 0.8) return 0;
+    let cx = b.x + b.gap;
+    for (let u = 0; u < b.units; u++) {
+      if (x >= cx - 0.35 && x <= cx + b.bargeLen + 0.35) return 5.7;
+      cx += b.bargeLen + b.gap;
+    }
+    if (x >= cx - 0.25 && x <= cx + b.tugLen + 1.0) return 6.8;
+    return 2.5;
   }
 
   function stepBarges(dt) {
@@ -927,15 +1101,31 @@
     for (let i = barges.length - 1; i >= 0; i--) {
       const b = barges[i];
       b.x += b.vx * dt;
+      if (b.sinking) {
+        b.sinkT += dt;
+        b.vx *= 0.985;
+        if (Math.random() < 0.55) {
+          emitSpray(2, b.x + rand(0, b.len), rand(0, 0.2), 3, true);
+        }
+        if (b.sinkT > 2.35) barges.splice(i, 1);
+        continue;
+      }
       if (!b.horned && b.x - rider.x < 58 && rider.x < b.x + b.len + 20) {
         b.horned = true;
         bargeHorn();
       }
       if (state === STATE.PLAY && !bladder.blown) {
-        const deck = 3.4;
-        if (rider.x > b.x - 1.1 && rider.x < b.x + b.len + 1.1 && rider.y < deck + 0.55) {
+        const hitH = bargeObstacleHeight(b, rider.x);
+        if (hitH > 0 && rider.y < hitH) {
           crashThud();
           beginWipe("barge");
+        } else if (hitH > 0 && rider.y >= hitH) {
+          b.cleared = true;
+        } else if (!b.scored && b.cleared && rider.x > b.x + b.len + 1.2) {
+          b.scored = true;
+          addScore(420, "BARGE JUMP", "#ffe08a", true);
+          blip(360, 0.12, "triangle", 0.05);
+          blip(540, 0.14, "sine", 0.05);
         }
       }
       if (b.x + b.len < rider.x - 70) barges.splice(i, 1);
@@ -948,6 +1138,14 @@
       if (sx > W + 80 || sx + b.len * PX < -80) continue;
       const sy = wy(0);
       g.save();
+      const sinkT = b.sinking ? b.sinkT : 0;
+      if (sinkT > 0) {
+        const midX = sx + b.len * PX * 0.5;
+        g.globalAlpha = 1 - clamp((sinkT - 0.7) / 1.6, 0, 0.88);
+        g.translate(midX, sy + sinkT * 48);
+        g.rotate(sinkT * 0.2);
+        g.translate(-midX, -sy);
+      }
 
       // wake
       g.fillStyle = "rgba(210,236,250,0.22)";
@@ -1030,6 +1228,173 @@
     }
   }
 
+  const WINDSURF_SAILS = [
+    ["#ff8a2b", "#2ec4b6"],
+    ["#4d8cbc", "#fff6d8"],
+    ["#e27a2a", "#1b2430"],
+    ["#ff5ad5", "#7ecbff"],
+  ];
+
+  function spawnWindsurfer() {
+    if (windsurfers.length >= 2) return false;
+    const x = rider.x + rand(40, 78);
+    if (bargeOccupies(x, 22)) return false;
+    for (let i = 0; i < windsurfers.length; i++) {
+      if (Math.abs(windsurfers[i].x - x) < 36) return false;
+    }
+    const toward = Math.random() < 0.55;
+    const colors = pick(WINDSURF_SAILS);
+    windsurfers.push({
+      x,
+      vx: toward ? -rand(1.6, 3.4) : rand(1.2, 3.2),
+      facing: toward ? -1 : 1,
+      phase: rand(0, TWO_PI),
+      c0: colors[0],
+      c1: colors[1],
+      cleared: false,
+      scored: false,
+    });
+    return true;
+  }
+
+  function stepWindsurfers(dt) {
+    if (state === STATE.PLAY && !bladder.blown && runTime > 7) {
+      windsurfClock -= dt;
+      if (windsurfClock <= 0) {
+        if (spawnWindsurfer()) windsurfClock = rand(13, 22);
+        else windsurfClock = rand(3, 6);
+      }
+    }
+
+    const hitW = 1.9;
+    const hitH = 4.4;
+    for (let i = windsurfers.length - 1; i >= 0; i--) {
+      const w = windsurfers[i];
+      w.x += w.vx * dt;
+      w.phase += dt;
+      if (state === STATE.PLAY && !bladder.blown) {
+        if (rider.x > w.x - hitW && rider.x < w.x + hitW) {
+          if (rider.y < hitH) {
+            crashThud();
+            beginWipe("windsurfer");
+          } else {
+            w.cleared = true;
+          }
+        } else if (!w.scored && w.cleared && rider.x > w.x + hitW + 0.6) {
+          w.scored = true;
+          addScore(160, "SAIL BY", "#9ad0ff", false);
+          blip(480, 0.09, "triangle", 0.04);
+        }
+      }
+      if (w.x < rider.x - 55 || w.x > rider.x + 110) windsurfers.splice(i, 1);
+    }
+  }
+
+  function drawWindsurfers(g) {
+    for (const w of windsurfers) {
+      const x = wx(w.x);
+      if (x < -70 || x > W + 70) continue;
+      const y = wy(0) + Math.sin(time * 6.5 + w.phase) * 2.2;
+      g.save();
+      g.translate(x, y);
+      if (w.facing < 0) g.scale(-1, 1);
+
+      g.fillStyle = "rgba(210,236,250,0.22)";
+      g.beginPath();
+      g.moveTo(-28, 8);
+      g.lineTo(26, 6);
+      g.lineTo(18, 16);
+      g.lineTo(-16, 17);
+      g.closePath();
+      g.fill();
+
+      g.fillStyle = "#eef4f8";
+      g.beginPath();
+      g.moveTo(-20, 4);
+      g.quadraticCurveTo(2, -1, 24, 3);
+      g.quadraticCurveTo(4, 9, -20, 7);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#e27a2a";
+      g.fillRect(-3, 2.5, 12, 2.6);
+      g.fillStyle = "#1a2430";
+      g.beginPath();
+      g.moveTo(3, 7);
+      g.lineTo(7, 15);
+      g.lineTo(-1, 7);
+      g.fill();
+
+      const lean = 0.32 + Math.sin(time * 3.1 + w.phase) * 0.07;
+      g.save();
+      g.rotate(-lean);
+      g.strokeStyle = "#1a1f28";
+      g.lineWidth = 3.2;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(1, 2);
+      g.lineTo(-5, 8);
+      g.moveTo(1, 2);
+      g.lineTo(7, 8);
+      g.stroke();
+      g.fillStyle = "#163848";
+      g.beginPath();
+      g.ellipse(0, -6, 5.4, 8.2, 0, 0, TWO_PI);
+      g.fill();
+      g.strokeStyle = "#e27a2a";
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.arc(0, -3, 5, 0.15, Math.PI - 0.15);
+      g.stroke();
+      g.strokeStyle = "#d7b39a";
+      g.lineWidth = 2.6;
+      g.beginPath();
+      g.moveTo(3, -10);
+      g.lineTo(16, -18);
+      g.stroke();
+      g.fillStyle = "#e8c2a4";
+      g.beginPath();
+      g.arc(1, -16, 4.2, 0, TWO_PI);
+      g.fill();
+      g.fillStyle = "#2b333e";
+      g.beginPath();
+      g.arc(1, -17, 4.3, Math.PI, TWO_PI);
+      g.fill();
+      g.restore();
+
+      g.save();
+      g.rotate(-0.38 + Math.sin(time * 2.1 + w.phase) * 0.05);
+      g.strokeStyle = "#d8dde2";
+      g.lineWidth = 2.2;
+      g.beginPath();
+      g.moveTo(2, 1);
+      g.lineTo(-7, -50);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(2, 1);
+      g.lineTo(-7, -50);
+      g.lineTo(30, -16);
+      g.closePath();
+      const sg = g.createLinearGradient(-7, -50, 30, 4);
+      sg.addColorStop(0, w.c0);
+      sg.addColorStop(0.5, "#fff6d8");
+      sg.addColorStop(1, w.c1);
+      g.fillStyle = sg;
+      g.fill();
+      g.strokeStyle = "rgba(30,18,10,0.28)";
+      g.lineWidth = 1;
+      g.stroke();
+      g.strokeStyle = "#2a241c";
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.moveTo(0, -17);
+      g.lineTo(28, -16);
+      g.stroke();
+      g.restore();
+
+      g.restore();
+    }
+  }
+
   function drawBirds(g) {
     for (const b of birds) {
       const x = wx(b.x);
@@ -1039,8 +1404,13 @@
       const osprey = b.kind === "osprey";
       g.save();
       g.translate(x, y);
-      g.rotate(Math.atan2(-b.vy, b.vx) * 0.45);
+      g.rotate(Math.atan2(-b.vy, b.vx) * 0.45 + (b.exploded ? (b.boomT || 0) * 14 : 0));
       if (b.vx < 0) g.scale(-1, 1);
+      if (b.exploded) {
+        const s = clamp(1 - (b.boomT || 0) * 1.6, 0.15, 1);
+        g.scale(s * 1.2, s * 0.7);
+        g.globalAlpha = clamp(1 - (b.boomT || 0) * 1.8, 0, 1);
+      }
 
       // wings
       g.fillStyle = osprey ? "#6a4a2c" : "#f2f2f6";
@@ -1165,6 +1535,7 @@
     run.thisJump.passed = false;
     run.thisJump.scoredJump = false;
     run.thisJump.path = 0;
+    run.thisJump.peakY = 0;
 
     rider.yank = 0;
     rider.stall = 0;
@@ -1188,9 +1559,12 @@
     chaos.next = rand(12, 18);
     birds.length = 0;
     barges.length = 0;
+    windsurfers.length = 0;
     birdClock = rand(7, 12);
     bargeClock = rand(14, 22);
+    windsurfClock = rand(8, 14);
     layout.repair.visible = false;
+    if (repairLink) repairLink.style.display = "none";
     shopDance.active = false;
     shopDance.t = 0;
     shopDance.opened = false;
@@ -1213,7 +1587,7 @@
     wipe.t = 0;
     wipe.why = kind;
     wipe.tag = pick(WIPE_LINES[kind] || WIPE_LINES.crash);
-    wipe.quote = (kind === "bladder" || kind === "bird") ? makeEstimate(kind) : null;
+    wipe.quote = isRepairWipe(kind) ? makeEstimate(kind) : null;
     rider.spinV = rand(-10, 10);
     rider.vy = Math.min(rider.vy, -2);
     shake = 12;
@@ -1391,7 +1765,14 @@
       const loft = clamp((kite.h - 0.45) * 1.4, 0, 1);
       const sendUp = Math.max(0, kite.vh) + kite.send * 0.35;
       if (c.pop && loaded) {
-        const pop = 11.4 + rider.vx * 0.4 + pull * 6.2 + sendUp * 3.5 + loft * 4.0;
+        let pop = 11.4 + rider.vx * 0.4 + pull * 6.2 + sendUp * 3.5 + loft * 4.0;
+        for (let i = 0; i < barges.length; i++) {
+          const ahead = barges[i].x - rider.x;
+          if (ahead > 4 && ahead < 26) {
+            pop += 3.4;
+            break;
+          }
+        }
         rider.vy = pop;
         rider.onWater = false;
         rider.spinV = (kite.vpos + (c.grab ? 2 : 0.4)) * 1.1;
@@ -1402,6 +1783,7 @@
         run.thisJump.passed = false;
         run.thisJump.scoredJump = false;
         run.thisJump.path = 0;
+        run.thisJump.peakY = 0;
         kite.loopAccum = 0;
         emitSplash(rider.x, 0, 0.45 + pull * 0.4);
         whoosh();
@@ -1416,6 +1798,7 @@
         run.thisJump.looped = false;
         run.thisJump.passed = false;
         run.thisJump.scoredJump = false;
+        run.thisJump.peakY = 0;
         emitSpray(8, rider.x, 0, rider.vx, false);
       }
 
@@ -1433,6 +1816,7 @@
       run.thisJump.air += dt;
       run.air += dt;
       run.maxAir = Math.max(run.maxAir, run.thisJump.air);
+      run.thisJump.peakY = Math.max(run.thisJump.peakY, rider.y);
 
       rider.spinV += kite.vpos * 1.8 * dt;
       if (c.grab) rider.spinV += 2.6 * dt;
@@ -1486,6 +1870,7 @@
         if (hard > 8) {
           addScore(30, "CLEAN", "#d4fff0", false);
         }
+        if (isGreatAir() && !landingOnBarge()) celebrateGreatAir();
         rider.spin = 0;
         rider.spinV = 0;
         rider.vy = 0;
@@ -2261,14 +2646,16 @@
     g.restore();
   }
 
-  function drawDancingBrogan(g, cx, cy, t) {
+  function drawDancingBrogan(g, cx, cy, t, scale) {
     const bounce = Math.abs(Math.sin(t * 11)) * 16;
     const sway = Math.sin(t * 8.2) * 0.16;
     const step = Math.sin(t * 11);
     const arm = Math.sin(t * 10.5);
+    const s = scale == null ? 1 : scale;
 
     g.save();
     g.translate(cx, cy);
+    g.scale(s, s);
     g.fillStyle = "rgba(20,12,8,0.28)";
     g.beginPath();
     g.ellipse(0, 86, 42 + Math.abs(step) * 6, 10, 0, 0, TWO_PI);
@@ -2538,6 +2925,21 @@
     g.restore();
   }
 
+  function syncRepairLink(label) {
+    if (!repairLink) return;
+    const b = layout.repair;
+    if (!b.visible || state !== STATE.WIPE) {
+      repairLink.style.display = "none";
+      return;
+    }
+    repairLink.textContent = label || "Take it to Airtime";
+    repairLink.style.display = "block";
+    repairLink.style.left = b.x + "px";
+    repairLink.style.top = b.y + "px";
+    repairLink.style.width = b.w + "px";
+    repairLink.style.height = b.h + "px";
+  }
+
   function drawRepairButton(g, label, y) {
     const bw = Math.min(320, W - 48);
     const bh = 46;
@@ -2560,10 +2962,11 @@
     g.textAlign = "center";
     g.textBaseline = "middle";
     g.fillText(label, W * 0.5, by + bh * 0.5);
+    syncRepairLink(label);
   }
 
   function wipeScreen(g) {
-    const shopWipe = wipe.why === "bladder" || wipe.why === "bird";
+    const shopWipe = isRepairWipe(wipe.why) && !!wipe.quote;
     const bladderWipe = wipe.why === "bladder";
     g.fillStyle = "rgba(6,10,16," + clamp(wipe.t * 0.55, 0, 0.52) + ")";
     g.fillRect(0, 0, W, H);
@@ -2597,35 +3000,48 @@
     }
 
     if (shopWipe && wipe.quote) {
-      const cardW = Math.min(540, W - 36);
-      const cardH = Math.min(148, H * 0.28);
+      const cardW = Math.min(560, W - 32);
+      const cardH = 164;
       const cardX = (W - cardW) / 2;
-      const cardY = top + 108;
-      g.fillStyle = "rgba(10,18,26,0.72)";
+      const cardY = top + 104;
+      const broganScale = clamp(Math.min(cardW, H) * 0.0011, 0.68, 0.92);
+      const partLine = wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part);
+      const btnLabel = wipe.why === "bladder" ? "Send it to Airtime"
+        : wipe.why === "bird" ? "Book a repair"
+        : "Take it to Airtime";
+      const note = (wipe.quote.note && /1538|cascade/i.test(wipe.quote.note))
+        ? ""
+        : (wipe.quote.note || "");
+      const shopAddress = "1538 Cascade Ave  ·  Hood River, OR";
+
+      g.fillStyle = "rgba(10,18,26,0.82)";
       roundRect(g, cardX, cardY, cardW, cardH, 12);
       g.fill();
-      g.strokeStyle = "rgba(255,200,140,0.35)";
+      g.strokeStyle = "rgba(255,200,140,0.45)";
       g.lineWidth = 1.5;
       g.stroke();
-      drawBrogan(g, cardX + 62, cardY + cardH * 0.42);
+      drawDancingBrogan(g, cardX + 64, cardY + cardH * 0.48, wipe.t, broganScale);
+      const tx = cardX + 148;
       g.textAlign = "left";
       g.textBaseline = "top";
-      const tx = cardX + 122;
-      g.font = "700 12px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,226,170,0.85)";
-      g.fillText("Brogan at Airtime  ·  Hood River", tx, cardY + 14);
-      g.font = "800 20px Trebuchet MS, sans-serif";
+      g.font = "800 13px Trebuchet MS, sans-serif";
       g.fillStyle = "#fff6d8";
-      g.fillText("$" + wipe.quote.price, tx, cardY + 34);
+      g.fillText("Brogan's on it.", tx, cardY + 14);
+      g.font = "800 30px Trebuchet MS, sans-serif";
+      g.fillStyle = "#fff6d8";
+      g.fillText("$" + wipe.quote.price, tx, cardY + 36);
       g.font = "700 14px Trebuchet MS, sans-serif";
-      g.fillText(wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part), tx, cardY + 58);
-      g.font = "600 12px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,236,200,0.8)";
-      g.fillText(wipe.quote.note, tx, cardY + 80);
-      g.font = "600 11px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,255,255,0.5)";
-      g.fillText("AIRTIME  ·  1538 Cascade Ave  ·  Hood River, OR", tx, cardY + 86);
-      drawRepairButton(g, wipe.why === "bird" ? "Book a repair" : "Send it to Airtime", cardY + cardH + 16);
+      g.fillStyle = "#ffe08a";
+      g.fillText(partLine, tx, cardY + 74);
+      if (note) {
+        g.font = "600 13px Trebuchet MS, sans-serif";
+        g.fillStyle = "rgba(255,236,200,0.88)";
+        g.fillText(note, tx, cardY + 98);
+      }
+      g.font = "700 13px Trebuchet MS, sans-serif";
+      g.fillStyle = "rgba(255,245,220,0.92)";
+      g.fillText(shopAddress, tx, cardY + (note ? 124 : 104));
+      drawRepairButton(g, btnLabel, cardY + cardH + 14);
     } else {
       drawRepairButton(g, "Book a repair", H * 0.62);
     }
@@ -2678,6 +3094,7 @@
       maybeChaos(dt);
       stepBirds(dt);
       stepBarges(dt);
+      stepWindsurfers(dt);
       stepCam(dt);
       stepParticles(dt);
       setWindHum(wind.knots, rider.vx);
@@ -2690,18 +3107,12 @@
       kite.pos += dt * 0.15;
       stepBirds(dt);
       stepBarges(dt);
+      stepWindsurfers(dt);
       stepCam(dt);
       stepParticles(dt);
-      if (startLatched && wipe.t > 0.35 && !shopDance.active) {
+      if (startLatched && wipe.t > 0.35) {
         startLatched = false;
         startPlay();
-      }
-    }
-    if (shopDance.active) {
-      shopDance.t += dt;
-      startLatched = false;
-      if (!shopDance.waitTap && shopDance.t >= shopDance.duration) {
-        finishShopDance();
       }
     }
     startLatched = false;
@@ -2717,9 +3128,11 @@
     mountains(ctx);
     water(ctx);
     drawBarges(ctx);
+    drawWindsurfers(ctx);
 
     if (state === STATE.TITLE) {
       layout.repair.visible = false;
+      syncRepairLink();
       titleScreen(ctx);
     } else {
       const kp = kiteScreenPos();
@@ -2736,14 +3149,13 @@
       hud(ctx);
       drawTouch(ctx);
       if (state === STATE.WIPE) wipeScreen(ctx);
+      else syncRepairLink();
     }
 
     if (flash > 0.02) {
       ctx.fillStyle = "rgba(255,220,180," + (flash * 0.35).toFixed(3) + ")";
       ctx.fillRect(-20, -20, W + 40, H + 40);
     }
-
-    if (shopDance.active) drawShopDance(ctx);
 
     requestAnimationFrame(frame);
   }
