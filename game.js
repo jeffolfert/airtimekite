@@ -10,7 +10,7 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
-  const VERSION = "2026.08.20.2";
+  const VERSION = "2026.08.20.3";
   const versionEl = document.getElementById("version");
   if (versionEl) versionEl.textContent = VERSION;
   const repairLink = document.getElementById("repair-link");
@@ -471,6 +471,9 @@
   const barges = [];
   let bargeClock = 18;
 
+  const windsurfers = [];
+  let windsurfClock = 11;
+
   const spray = [];
   const pops = [];
   const foams = [];
@@ -546,6 +549,13 @@
       "TUG SAID EXCUSE ME",
       "THAT IS NOT A KICKER",
       "COMMERCIAL TRAFFIC",
+    ],
+    windsurfer: [
+      "WINDSURFER",
+      "SAIL COLLISION",
+      "THAT WAS A PERSON",
+      "EVENT SITE TRAFFIC",
+      "WATCH THE RIG",
     ],
   };
 
@@ -804,10 +814,27 @@
     return false;
   }
 
+  function windsurfNear() {
+    for (let i = 0; i < windsurfers.length; i++) {
+      const w = windsurfers[i];
+      if (rider.x > w.x - 16 && rider.x < w.x + 12) return true;
+    }
+    return false;
+  }
+
+  function bargeOccupies(x, pad) {
+    for (let i = 0; i < barges.length; i++) {
+      const b = barges[i];
+      if (b.sinking) continue;
+      if (x > b.x - pad && x < b.x + b.len + pad) return true;
+    }
+    return false;
+  }
+
   function maybeChaos(dt) {
     if (state !== STATE.PLAY || bladder.blown) return;
     if (runTime < 10) return;
-    if (bargeNear()) {
+    if (bargeNear() || windsurfNear()) {
       chaos.next = Math.max(chaos.next, 3.5);
       return;
     }
@@ -1201,6 +1228,173 @@
     }
   }
 
+  const WINDSURF_SAILS = [
+    ["#ff8a2b", "#2ec4b6"],
+    ["#4d8cbc", "#fff6d8"],
+    ["#e27a2a", "#1b2430"],
+    ["#ff5ad5", "#7ecbff"],
+  ];
+
+  function spawnWindsurfer() {
+    if (windsurfers.length >= 2) return false;
+    const x = rider.x + rand(40, 78);
+    if (bargeOccupies(x, 22)) return false;
+    for (let i = 0; i < windsurfers.length; i++) {
+      if (Math.abs(windsurfers[i].x - x) < 36) return false;
+    }
+    const toward = Math.random() < 0.55;
+    const colors = pick(WINDSURF_SAILS);
+    windsurfers.push({
+      x,
+      vx: toward ? -rand(1.6, 3.4) : rand(1.2, 3.2),
+      facing: toward ? -1 : 1,
+      phase: rand(0, TWO_PI),
+      c0: colors[0],
+      c1: colors[1],
+      cleared: false,
+      scored: false,
+    });
+    return true;
+  }
+
+  function stepWindsurfers(dt) {
+    if (state === STATE.PLAY && !bladder.blown && runTime > 7) {
+      windsurfClock -= dt;
+      if (windsurfClock <= 0) {
+        if (spawnWindsurfer()) windsurfClock = rand(13, 22);
+        else windsurfClock = rand(3, 6);
+      }
+    }
+
+    const hitW = 1.9;
+    const hitH = 4.4;
+    for (let i = windsurfers.length - 1; i >= 0; i--) {
+      const w = windsurfers[i];
+      w.x += w.vx * dt;
+      w.phase += dt;
+      if (state === STATE.PLAY && !bladder.blown) {
+        if (rider.x > w.x - hitW && rider.x < w.x + hitW) {
+          if (rider.y < hitH) {
+            crashThud();
+            beginWipe("windsurfer");
+          } else {
+            w.cleared = true;
+          }
+        } else if (!w.scored && w.cleared && rider.x > w.x + hitW + 0.6) {
+          w.scored = true;
+          addScore(160, "SAIL BY", "#9ad0ff", false);
+          blip(480, 0.09, "triangle", 0.04);
+        }
+      }
+      if (w.x < rider.x - 55 || w.x > rider.x + 110) windsurfers.splice(i, 1);
+    }
+  }
+
+  function drawWindsurfers(g) {
+    for (const w of windsurfers) {
+      const x = wx(w.x);
+      if (x < -70 || x > W + 70) continue;
+      const y = wy(0) + Math.sin(time * 6.5 + w.phase) * 2.2;
+      g.save();
+      g.translate(x, y);
+      if (w.facing < 0) g.scale(-1, 1);
+
+      g.fillStyle = "rgba(210,236,250,0.22)";
+      g.beginPath();
+      g.moveTo(-28, 8);
+      g.lineTo(26, 6);
+      g.lineTo(18, 16);
+      g.lineTo(-16, 17);
+      g.closePath();
+      g.fill();
+
+      g.fillStyle = "#eef4f8";
+      g.beginPath();
+      g.moveTo(-20, 4);
+      g.quadraticCurveTo(2, -1, 24, 3);
+      g.quadraticCurveTo(4, 9, -20, 7);
+      g.closePath();
+      g.fill();
+      g.fillStyle = "#e27a2a";
+      g.fillRect(-3, 2.5, 12, 2.6);
+      g.fillStyle = "#1a2430";
+      g.beginPath();
+      g.moveTo(3, 7);
+      g.lineTo(7, 15);
+      g.lineTo(-1, 7);
+      g.fill();
+
+      const lean = 0.32 + Math.sin(time * 3.1 + w.phase) * 0.07;
+      g.save();
+      g.rotate(-lean);
+      g.strokeStyle = "#1a1f28";
+      g.lineWidth = 3.2;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(1, 2);
+      g.lineTo(-5, 8);
+      g.moveTo(1, 2);
+      g.lineTo(7, 8);
+      g.stroke();
+      g.fillStyle = "#163848";
+      g.beginPath();
+      g.ellipse(0, -6, 5.4, 8.2, 0, 0, TWO_PI);
+      g.fill();
+      g.strokeStyle = "#e27a2a";
+      g.lineWidth = 1.6;
+      g.beginPath();
+      g.arc(0, -3, 5, 0.15, Math.PI - 0.15);
+      g.stroke();
+      g.strokeStyle = "#d7b39a";
+      g.lineWidth = 2.6;
+      g.beginPath();
+      g.moveTo(3, -10);
+      g.lineTo(16, -18);
+      g.stroke();
+      g.fillStyle = "#e8c2a4";
+      g.beginPath();
+      g.arc(1, -16, 4.2, 0, TWO_PI);
+      g.fill();
+      g.fillStyle = "#2b333e";
+      g.beginPath();
+      g.arc(1, -17, 4.3, Math.PI, TWO_PI);
+      g.fill();
+      g.restore();
+
+      g.save();
+      g.rotate(-0.38 + Math.sin(time * 2.1 + w.phase) * 0.05);
+      g.strokeStyle = "#d8dde2";
+      g.lineWidth = 2.2;
+      g.beginPath();
+      g.moveTo(2, 1);
+      g.lineTo(-7, -50);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(2, 1);
+      g.lineTo(-7, -50);
+      g.lineTo(30, -16);
+      g.closePath();
+      const sg = g.createLinearGradient(-7, -50, 30, 4);
+      sg.addColorStop(0, w.c0);
+      sg.addColorStop(0.5, "#fff6d8");
+      sg.addColorStop(1, w.c1);
+      g.fillStyle = sg;
+      g.fill();
+      g.strokeStyle = "rgba(30,18,10,0.28)";
+      g.lineWidth = 1;
+      g.stroke();
+      g.strokeStyle = "#2a241c";
+      g.lineWidth = 2.5;
+      g.beginPath();
+      g.moveTo(0, -17);
+      g.lineTo(28, -16);
+      g.stroke();
+      g.restore();
+
+      g.restore();
+    }
+  }
+
   function drawBirds(g) {
     for (const b of birds) {
       const x = wx(b.x);
@@ -1365,8 +1559,10 @@
     chaos.next = rand(12, 18);
     birds.length = 0;
     barges.length = 0;
+    windsurfers.length = 0;
     birdClock = rand(7, 12);
     bargeClock = rand(14, 22);
+    windsurfClock = rand(8, 14);
     layout.repair.visible = false;
     if (repairLink) repairLink.style.display = "none";
     shopDance.active = false;
@@ -2895,6 +3091,7 @@
       maybeChaos(dt);
       stepBirds(dt);
       stepBarges(dt);
+      stepWindsurfers(dt);
       stepCam(dt);
       stepParticles(dt);
       setWindHum(wind.knots, rider.vx);
@@ -2907,6 +3104,7 @@
       kite.pos += dt * 0.15;
       stepBirds(dt);
       stepBarges(dt);
+      stepWindsurfers(dt);
       stepCam(dt);
       stepParticles(dt);
       if (startLatched && wipe.t > 0.35) {
@@ -2927,6 +3125,7 @@
     mountains(ctx);
     water(ctx);
     drawBarges(ctx);
+    drawWindsurfers(ctx);
 
     if (state === STATE.TITLE) {
       layout.repair.visible = false;
