@@ -2,12 +2,12 @@
 
 A Hood River kite session. Fly it, send big air, and if a bladder goes — bring it by the shop.
 
-Play it: **https://jeffolfert.github.io/gorge-kite/**
+Play it: **https://jeffolfert.github.io/airtimekite/**
 
 Open `index.html` in any modern browser. No build step.
 
 AIRTIME kite · 1538 Cascade Ave · Hood River, OR  
-Repairs and replacement bladders: [airtimekite.com](https://airtimekite.com)
+Repairs and replacement bladders: [airtimekite.com](https://www.airtimekite.com/)
 
 ## Controls
 

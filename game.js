@@ -9,7 +9,7 @@
 
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
-  const REPAIR_URL = "https://airtimekite.com";
+  const REPAIR_URL = "https://www.airtimekite.com/";
 
   const STATE = { TITLE: 0, PLAY: 1, WIPE: 2 };
 
@@ -223,6 +223,14 @@
     repair: { x: 0, y: 0, w: 0, h: 0, visible: false },
   };
 
+  const shopDance = {
+    active: false,
+    t: 0,
+    duration: 2,
+    opened: false,
+    waitTap: false,
+  };
+
   function layoutTouch(w, h) {
     const pad = Math.max(28, w * 0.03);
     const jr = clamp(h * 0.11, 56, 84);
@@ -246,12 +254,38 @@
     return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
   }
 
-  function openRepair() {
+  function launchAirtime() {
     try {
-      window.open(REPAIR_URL, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      window.location.href = REPAIR_URL;
+      const w = window.open(REPAIR_URL, "_blank", "noopener,noreferrer");
+      if (w) return true;
+    } catch (err) {}
+    return false;
+  }
+
+  function startShopDance() {
+    if (shopDance.active) return;
+    shopDance.active = true;
+    shopDance.t = 0;
+    shopDance.duration = rand(1.5, 2.5);
+    shopDance.opened = false;
+    shopDance.waitTap = false;
+    blip(220, 0.1, "triangle", 0.06);
+    blip(330, 0.14, "sine", 0.05);
+    blip(440, 0.18, "triangle", 0.04);
+  }
+
+  function finishShopDance() {
+    if (launchAirtime()) {
+      shopDance.opened = true;
+      shopDance.active = false;
+      shopDance.waitTap = false;
+    } else {
+      shopDance.waitTap = true;
     }
+  }
+
+  function openRepair() {
+    startShopDance();
   }
 
   function onPointerDown(e) {
@@ -260,6 +294,10 @@
     pointer.down = true;
     pointer.x = p.x;
     pointer.y = p.y;
+    if (shopDance.active) {
+      if (shopDance.waitTap) finishShopDance();
+      return;
+    }
     if (state === STATE.WIPE && hitRepair(p)) {
       openRepair();
       return;
@@ -320,7 +358,7 @@
     pointer.x = p.x;
     pointer.y = p.y;
     if (joy.active && e.pointerId === joy.id) updateJoy(p);
-    canvas.style.cursor = (state === STATE.WIPE && hitRepair(p)) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
+    canvas.style.cursor = ((state === STATE.WIPE && hitRepair(p)) || shopDance.active) ? "pointer" : (document.body.classList.contains("started") ? "none" : "crosshair");
   }
 
   function onPointerUp(e) {
@@ -711,6 +749,10 @@
     bladder.t = 0;
     bladder.next = rand(11, 24);
     layout.repair.visible = false;
+    shopDance.active = false;
+    shopDance.t = 0;
+    shopDance.opened = false;
+    shopDance.waitTap = false;
   }
 
   function startPlay() {
@@ -1724,6 +1766,306 @@
     g.restore();
   }
 
+  function kiteGlyph(g, x, y, s, rot, c0, c1) {
+    g.save();
+    g.translate(x, y);
+    g.rotate(rot);
+    g.scale(s, s);
+    g.beginPath();
+    g.moveTo(-46, 6);
+    g.quadraticCurveTo(-20, -22, 0, -26);
+    g.quadraticCurveTo(20, -22, 46, 6);
+    g.quadraticCurveTo(16, 2, 0, 4);
+    g.quadraticCurveTo(-16, 2, -46, 6);
+    const kg = g.createLinearGradient(-46, -26, 46, 8);
+    kg.addColorStop(0, c0);
+    kg.addColorStop(0.5, "#fff2c4");
+    kg.addColorStop(1, c1);
+    g.fillStyle = kg;
+    g.fill();
+    g.strokeStyle = "rgba(30,18,10,0.35)";
+    g.lineWidth = 1.2;
+    g.stroke();
+    g.restore();
+  }
+
+  function drawDancingBrogan(g, cx, cy, t) {
+    const bounce = Math.abs(Math.sin(t * 11)) * 16;
+    const sway = Math.sin(t * 8.2) * 0.16;
+    const step = Math.sin(t * 11);
+    const arm = Math.sin(t * 10.5);
+
+    g.save();
+    g.translate(cx, cy);
+    g.fillStyle = "rgba(20,12,8,0.28)";
+    g.beginPath();
+    g.ellipse(0, 86, 42 + Math.abs(step) * 6, 10, 0, 0, TWO_PI);
+    g.fill();
+
+    g.translate(step * 10, -bounce);
+    g.rotate(sway);
+
+    // legs
+    g.strokeStyle = "#2a241c";
+    g.lineWidth = 9;
+    g.lineCap = "round";
+    g.beginPath();
+    g.moveTo(-4, 38);
+    g.lineTo(-16 - step * 10, 78);
+    g.moveTo(6, 38);
+    g.lineTo(18 + step * 10, 78);
+    g.stroke();
+    g.fillStyle = "#c45a22";
+    g.beginPath();
+    g.ellipse(-16 - step * 10, 82, 11, 5, -0.2 + step * 0.15, 0, TWO_PI);
+    g.ellipse(18 + step * 10, 82, 11, 5, 0.2 - step * 0.15, 0, TWO_PI);
+    g.fill();
+
+    // hoodie body
+    g.fillStyle = "#1d4d62";
+    g.beginPath();
+    g.moveTo(-28, 8);
+    g.quadraticCurveTo(-34, 36, -20, 50);
+    g.lineTo(20, 50);
+    g.quadraticCurveTo(34, 36, 28, 8);
+    g.quadraticCurveTo(0, 16, -28, 8);
+    g.fill();
+    g.fillStyle = "#e27a2a";
+    g.fillRect(-18, 18, 36, 10);
+    g.fillStyle = "#fff6d8";
+    g.font = "800 8px Trebuchet MS, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("AIRTIME", 0, 23);
+
+    // hoodie pocket
+    g.strokeStyle = "rgba(255,236,200,0.25)";
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(-12, 36);
+    g.lineTo(0, 44);
+    g.lineTo(12, 36);
+    g.stroke();
+
+    // arms
+    g.strokeStyle = "#1d4d62";
+    g.lineWidth = 11;
+    g.beginPath();
+    g.moveTo(-22, 16);
+    g.lineTo(-40, 8 + arm * 22);
+    g.lineTo(-52, -6 + arm * 16);
+    g.moveTo(22, 16);
+    g.lineTo(38, 4 - arm * 22);
+    g.lineTo(50, -18 - arm * 12);
+    g.stroke();
+    g.fillStyle = "#e8b898";
+    g.beginPath();
+    g.arc(-54, -8 + arm * 16, 7, 0, TWO_PI);
+    g.arc(52, -20 - arm * 12, 7, 0, TWO_PI);
+    g.fill();
+
+    // head
+    g.save();
+    g.translate(0, -2 + Math.sin(t * 12) * 2);
+    g.rotate(-sway * 0.4);
+    // hood
+    g.fillStyle = "#163848";
+    g.beginPath();
+    g.ellipse(0, -28, 26, 24, 0, Math.PI, TWO_PI);
+    g.fill();
+    g.beginPath();
+    g.ellipse(0, -18, 22, 20, 0, 0, TWO_PI);
+    g.fill();
+    // face
+    g.fillStyle = "#e8b898";
+    g.beginPath();
+    g.ellipse(0, -16, 17, 16, 0, 0, TWO_PI);
+    g.fill();
+    // hair
+    g.fillStyle = "#3a2418";
+    g.beginPath();
+    g.ellipse(0, -26, 16, 9, 0, Math.PI, TWO_PI);
+    g.fill();
+    g.beginPath();
+    g.ellipse(-12, -22, 5, 6, -0.4, 0, TWO_PI);
+    g.fill();
+    // eyes
+    g.fillStyle = "#1a1410";
+    g.beginPath();
+    g.ellipse(-6, -18, 2.1, 2.4, 0, 0, TWO_PI);
+    g.ellipse(6, -18, 2.1, 2.4, 0, 0, TWO_PI);
+    g.fill();
+    g.fillStyle = "#fff";
+    g.beginPath();
+    g.arc(-5.2, -19, 0.7, 0, TWO_PI);
+    g.arc(6.8, -19, 0.7, 0, TWO_PI);
+    g.fill();
+    // grin
+    g.strokeStyle = "#8a3a28";
+    g.lineWidth = 2.2;
+    g.lineCap = "round";
+    g.beginPath();
+    g.arc(0, -10, 8, 0.15, Math.PI - 0.15);
+    g.stroke();
+    g.fillStyle = "#fff6e8";
+    g.beginPath();
+    g.moveTo(-5, -11);
+    g.quadraticCurveTo(0, -6, 5, -11);
+    g.quadraticCurveTo(0, -8.5, -5, -11);
+    g.fill();
+    // hoodie strings
+    g.strokeStyle = "#e8d2a0";
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(-7, -2);
+    g.lineTo(-10 + Math.sin(t * 9) * 3, 16);
+    g.moveTo(7, -2);
+    g.lineTo(11 + Math.cos(t * 9) * 3, 16);
+    g.stroke();
+    g.restore();
+
+    g.restore();
+  }
+
+  function drawShopDance(g) {
+    const t = shopDance.t;
+    const fade = clamp(t * 4, 0, 1);
+    g.save();
+    g.globalAlpha = fade;
+
+    g.fillStyle = "rgba(6,10,14,0.78)";
+    g.fillRect(0, 0, W, H);
+
+    const shopW = Math.min(W * 0.94, 780);
+    const shopH = Math.min(H * 0.9, 580);
+    const sx = (W - shopW) / 2;
+    const sy = (H - shopH) / 2;
+
+    // shop room
+    const wall = g.createLinearGradient(sx, sy, sx, sy + shopH);
+    wall.addColorStop(0, "#6b3d28");
+    wall.addColorStop(0.55, "#8a5340");
+    wall.addColorStop(1, "#5a3426");
+    g.fillStyle = wall;
+    roundRect(g, sx, sy, shopW, shopH, 16);
+    g.fill();
+
+    // back wall panel
+    g.fillStyle = "#c9a06a";
+    g.fillRect(sx + 18, sy + 18, shopW - 36, shopH * 0.58);
+
+    // brick suggestion
+    g.strokeStyle = "rgba(90,50,32,0.18)";
+    g.lineWidth = 1;
+    for (let y = sy + 28; y < sy + shopH * 0.55; y += 16) {
+      g.beginPath();
+      g.moveTo(sx + 22, y);
+      g.lineTo(sx + shopW - 22, y);
+      g.stroke();
+    }
+
+    // window — Cascade Ave
+    const wx0 = sx + shopW - 168;
+    const wy0 = sy + 36;
+    g.fillStyle = "#2a5070";
+    g.fillRect(wx0, wy0, 128, 86);
+    const skyG = g.createLinearGradient(wx0, wy0, wx0, wy0 + 86);
+    skyG.addColorStop(0, "#7eb3d8");
+    skyG.addColorStop(1, "#f0c27a");
+    g.fillStyle = skyG;
+    g.fillRect(wx0 + 6, wy0 + 6, 116, 74);
+    g.fillStyle = "#3d4a28";
+    g.fillRect(wx0 + 6, wy0 + 58, 116, 22);
+    g.fillStyle = "#c2a06a";
+    g.fillRect(wx0 + 6, wy0 + 68, 40, 12);
+    g.strokeStyle = "#3a2418";
+    g.lineWidth = 4;
+    g.strokeRect(wx0, wy0, 128, 86);
+    g.beginPath();
+    g.moveTo(wx0 + 64, wy0);
+    g.lineTo(wx0 + 64, wy0 + 86);
+    g.moveTo(wx0, wy0 + 43);
+    g.lineTo(wx0 + 128, wy0 + 43);
+    g.stroke();
+    g.fillStyle = "rgba(255,236,200,0.85)";
+    g.font = "700 10px Trebuchet MS, sans-serif";
+    g.textAlign = "center";
+    g.fillText("CASCADE AVE", wx0 + 64, wy0 + 102);
+
+    // AIRTIME shop sign
+    g.fillStyle = "#1a2430";
+    roundRect(g, sx + 36, sy + 32, 210, 46, 6);
+    g.fill();
+    g.fillStyle = "#e27a2a";
+    g.fillRect(sx + 36, sy + 32, 8, 46);
+    g.fillStyle = "#fff4d2";
+    g.font = "800 22px Trebuchet MS, sans-serif";
+    g.textAlign = "left";
+    g.fillText("AIRTIME KITE", sx + 54, sy + 52);
+    g.font = "600 10px Trebuchet MS, sans-serif";
+    g.fillStyle = "rgba(255,226,170,0.75)";
+    g.fillText("1538 Cascade  ·  Hood River", sx + 54, sy + 70);
+
+    // kites on the wall
+    kiteGlyph(g, sx + 90, sy + 130, 0.55, -0.18, "#ff8a2b", "#2ec4b6");
+    kiteGlyph(g, sx + 170, sy + 118, 0.42, 0.22, "#ff5ad5", "#7ecbff");
+    kiteGlyph(g, sx + 250, sy + 136, 0.48, -0.08, "#ffe08a", "#1bb8a8");
+    kiteGlyph(g, sx + shopW * 0.48, sy + 124, 0.38, 0.3, "#ff7a3c", "#4d8cbc");
+
+    // workbench
+    const bx = sx + 28;
+    const by = sy + shopH * 0.62;
+    g.fillStyle = "#6a4228";
+    g.fillRect(bx, by, shopW - 56, 18);
+    g.fillStyle = "#3a2418";
+    g.fillRect(bx + 10, by + 18, 14, shopH * 0.22);
+    g.fillRect(bx + shopW - 86, by + 18, 14, shopH * 0.22);
+    g.fillStyle = "#c4a06a";
+    g.fillRect(bx - 4, by - 6, shopW - 48, 8);
+
+    // sewing machine
+    const mx = sx + shopW - 150;
+    const my = by - 4;
+    g.fillStyle = "#2a3038";
+    g.fillRect(mx, my - 8, 70, 10);
+    g.fillRect(mx + 40, my - 36, 16, 30);
+    g.fillRect(mx + 28, my - 42, 40, 10);
+    g.fillStyle = "#e27a2a";
+    g.fillRect(mx + 52, my - 46, 4, 8);
+    g.strokeStyle = "rgba(255,210,120,0.7)";
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(mx + 54, my - 46);
+    g.lineTo(mx + 20 + Math.sin(t * 14) * 8, my - 20);
+    g.stroke();
+    g.fillStyle = "#fff6d8";
+    g.font = "700 9px Trebuchet MS, sans-serif";
+    g.textAlign = "center";
+    g.fillText("SEWING", mx + 35, my + 8);
+
+    // spare kite on bench
+    kiteGlyph(g, sx + 80, by - 8, 0.28, 0.6, "#ff8a2b", "#2ec4b6");
+
+    // dancing Brogan
+    drawDancingBrogan(g, W * 0.5, sy + shopH * 0.58, t);
+
+    g.textAlign = "center";
+    g.font = "800 " + clamp(shopW * 0.045, 20, 34) + "px Trebuchet MS, sans-serif";
+    g.fillStyle = "#fff6d8";
+    g.fillText("Brogan's on it.", W * 0.5, sy + shopH - 52);
+    g.font = "600 14px Trebuchet MS, sans-serif";
+    g.fillStyle = "rgba(255,226,170,0.85)";
+    if (shopDance.waitTap) {
+      const pulse = 0.6 + Math.sin(time * 6) * 0.4;
+      g.fillStyle = "rgba(255,210,110," + pulse.toFixed(2) + ")";
+      g.fillText("tap to open airtimekite.com", W * 0.5, sy + shopH - 28);
+    } else {
+      g.fillText("1538 Cascade Ave  ·  then sending you over", W * 0.5, sy + shopH - 28);
+    }
+
+    g.restore();
+  }
+
   function drawRepairButton(g, label, y) {
     const bw = Math.min(320, W - 48);
     const bh = 46;
@@ -1872,9 +2214,16 @@
       kite.pos += dt * 0.15;
       stepCam(dt);
       stepParticles(dt);
-      if (startLatched && wipe.t > 0.35) {
+      if (startLatched && wipe.t > 0.35 && !shopDance.active) {
         startLatched = false;
         startPlay();
+      }
+    }
+    if (shopDance.active) {
+      shopDance.t += dt;
+      startLatched = false;
+      if (!shopDance.waitTap && shopDance.t >= shopDance.duration) {
+        finishShopDance();
       }
     }
     startLatched = false;
@@ -1913,6 +2262,8 @@
       ctx.fillStyle = "rgba(255,220,180," + (flash * 0.35).toFixed(3) + ")";
       ctx.fillRect(-20, -20, W + 40, H + 40);
     }
+
+    if (shopDance.active) drawShopDance(ctx);
 
     requestAnimationFrame(frame);
   }
