@@ -10,7 +10,7 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
-  const VERSION = "2026.08.20.4";
+  const VERSION = "2026.08.20.5";
   const versionEl = document.getElementById("version");
   if (versionEl) versionEl.textContent = VERSION;
   const repairLink = document.getElementById("repair-link");
@@ -26,6 +26,30 @@
   const smooth = (t) => t * t * (3 - 2 * t);
   const rand = (a, b) => a + Math.random() * (b - a);
   const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+  function wrapLines(g, text, maxWidth) {
+    const words = String(text || "").split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    const lines = [];
+    let line = words[0];
+    for (let i = 1; i < words.length; i++) {
+      const next = line + " " + words[i];
+      if (g.measureText(next).width <= maxWidth) line = next;
+      else {
+        lines.push(line);
+        line = words[i];
+      }
+    }
+    lines.push(line);
+    return lines;
+  }
+
+  function wrapAddress(g, text, maxWidth) {
+    if (g.measureText(text).width <= maxWidth) return [text];
+    const parts = String(text).split(/\s+·\s+/).filter(Boolean);
+    if (parts.length > 1 && parts.every((p) => g.measureText(p).width <= maxWidth)) return parts;
+    return wrapLines(g, text, maxWidth);
+  }
+
   const wrap = (v, a, b) => {
     const r = b - a;
     return ((((v - a) % r) + r) % r) + a;
@@ -2965,6 +2989,79 @@
     syncRepairLink(label);
   }
 
+  function drawShopQuoteCard(g, quote, why, t, cardY) {
+    const padX = 16;
+    const padY = 14;
+    const gap = 8;
+    const cardW = Math.min(560, W - 32);
+    const cardX = (W - cardW) / 2;
+    const broganColW = clamp(Math.round(cardW * 0.34), 112, 140);
+    const tx = cardX + broganColW;
+    const textW = Math.max(120, cardW - broganColW - padX);
+    const note = quote.note || "";
+    const shopAddress = "1538 Cascade Ave  ·  Hood River, OR";
+    const partLine = why === "bird" ? quote.part : ("on the " + quote.part);
+    const btnLabel = why === "bladder" ? "Send it to Airtime"
+      : why === "bird" ? "Book a repair"
+      : "Take it to Airtime";
+
+    const stack = [
+      { text: "Brogan's on it.", font: "800 13px Trebuchet MS, sans-serif", fill: "#fff6d8", lh: 16 },
+      { text: "$" + quote.price, font: "800 28px Trebuchet MS, sans-serif", fill: "#fff6d8", lh: 30 },
+      { text: partLine, font: "700 14px Trebuchet MS, sans-serif", fill: "#ffe08a", lh: 18 },
+      { text: note, font: "600 13px Trebuchet MS, sans-serif", fill: "rgba(255,236,200,0.88)", lh: 17 },
+      { text: shopAddress, font: "600 11px Trebuchet MS, sans-serif", fill: "rgba(176,188,200,0.7)", lh: 15, address: true },
+    ];
+
+    const measured = [];
+    let stackH = 0;
+    for (let i = 0; i < stack.length; i++) {
+      const row = stack[i];
+      g.font = row.font;
+      const lines = row.address ? wrapAddress(g, row.text, textW) : wrapLines(g, row.text, textW);
+      if (!lines.length) continue;
+      if (measured.length) stackH += gap;
+      measured.push({ font: row.font, fill: row.fill, lh: row.lh, lines: lines });
+      stackH += lines.length * row.lh;
+    }
+
+    const cardH = padY + stackH + padY;
+    const btnH = 46;
+    const overflow = cardY + cardH + 14 + btnH + 40 - H;
+    if (overflow > 0) cardY = Math.max(8, cardY - overflow);
+
+    g.fillStyle = "rgba(10,18,26,0.82)";
+    roundRect(g, cardX, cardY, cardW, cardH, 12);
+    g.fill();
+    g.strokeStyle = "rgba(255,200,140,0.45)";
+    g.lineWidth = 1.5;
+    g.stroke();
+
+    const broganScale = clamp(broganColW / 168, 0.48, 0.72);
+    g.save();
+    g.beginPath();
+    g.rect(cardX + 4, cardY + 4, broganColW - 8, cardH - 8);
+    g.clip();
+    drawDancingBrogan(g, cardX + broganColW * 0.48, cardY + cardH * 0.52, t, broganScale);
+    g.restore();
+
+    g.textAlign = "left";
+    g.textBaseline = "top";
+    let y = cardY + padY;
+    for (let i = 0; i < measured.length; i++) {
+      const row = measured[i];
+      g.font = row.font;
+      g.fillStyle = row.fill;
+      for (let j = 0; j < row.lines.length; j++) {
+        g.fillText(row.lines[j], tx, y);
+        y += row.lh;
+      }
+      if (i < measured.length - 1) y += gap;
+    }
+
+    drawRepairButton(g, btnLabel, cardY + cardH + 14);
+  }
+
   function wipeScreen(g) {
     const shopWipe = isRepairWipe(wipe.why) && !!wipe.quote;
     const bladderWipe = wipe.why === "bladder";
@@ -3000,48 +3097,7 @@
     }
 
     if (shopWipe && wipe.quote) {
-      const cardW = Math.min(560, W - 32);
-      const cardH = 164;
-      const cardX = (W - cardW) / 2;
-      const cardY = top + 104;
-      const broganScale = clamp(Math.min(cardW, H) * 0.0011, 0.68, 0.92);
-      const partLine = wipe.why === "bird" ? wipe.quote.part : ("on the " + wipe.quote.part);
-      const btnLabel = wipe.why === "bladder" ? "Send it to Airtime"
-        : wipe.why === "bird" ? "Book a repair"
-        : "Take it to Airtime";
-      const note = (wipe.quote.note && /1538|cascade/i.test(wipe.quote.note))
-        ? ""
-        : (wipe.quote.note || "");
-      const shopAddress = "1538 Cascade Ave  ·  Hood River, OR";
-
-      g.fillStyle = "rgba(10,18,26,0.82)";
-      roundRect(g, cardX, cardY, cardW, cardH, 12);
-      g.fill();
-      g.strokeStyle = "rgba(255,200,140,0.45)";
-      g.lineWidth = 1.5;
-      g.stroke();
-      drawDancingBrogan(g, cardX + 64, cardY + cardH * 0.48, wipe.t, broganScale);
-      const tx = cardX + 148;
-      g.textAlign = "left";
-      g.textBaseline = "top";
-      g.font = "800 13px Trebuchet MS, sans-serif";
-      g.fillStyle = "#fff6d8";
-      g.fillText("Brogan's on it.", tx, cardY + 14);
-      g.font = "800 30px Trebuchet MS, sans-serif";
-      g.fillStyle = "#fff6d8";
-      g.fillText("$" + wipe.quote.price, tx, cardY + 36);
-      g.font = "700 14px Trebuchet MS, sans-serif";
-      g.fillStyle = "#ffe08a";
-      g.fillText(partLine, tx, cardY + 74);
-      if (note) {
-        g.font = "600 13px Trebuchet MS, sans-serif";
-        g.fillStyle = "rgba(255,236,200,0.88)";
-        g.fillText(note, tx, cardY + 98);
-      }
-      g.font = "700 13px Trebuchet MS, sans-serif";
-      g.fillStyle = "rgba(255,245,220,0.92)";
-      g.fillText(shopAddress, tx, cardY + (note ? 124 : 104));
-      drawRepairButton(g, btnLabel, cardY + cardH + 14);
+      drawShopQuoteCard(g, wipe.quote, wipe.why, wipe.t, top + 104);
     } else {
       drawRepairButton(g, "Book a repair", H * 0.62);
     }
