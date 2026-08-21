@@ -933,21 +933,21 @@
       const mid = (x0 + x1) * 0.5;
       const pulse = 0.82 + Math.sin(time * 6.5 + gust.phase) * 0.1;
       g.save();
-      g.fillStyle = "rgba(6, 20, 32, " + (0.4 * pulse).toFixed(3) + ")";
+      g.fillStyle = "rgba(6, 18, 28, " + (0.52 * pulse).toFixed(3) + ")";
       g.beginPath();
       g.ellipse(mid, sy + 13, w * 0.5, 17 + gust.power * 7, 0, 0, TWO_PI);
       g.fill();
-      g.fillStyle = "rgba(4, 12, 22, 0.28)";
+      g.fillStyle = "rgba(4, 10, 18, 0.34)";
       g.beginPath();
       g.ellipse(mid - w * 0.08, sy + 8, w * 0.32, 9, 0, 0, TWO_PI);
       g.fill();
-      g.strokeStyle = "rgba(210, 232, 248, 0.32)";
-      g.lineWidth = 1.15;
+      g.strokeStyle = "rgba(220, 238, 252, 0.42)";
+      g.lineWidth = 1.2;
       const n = 5 + (gust.power * 3) | 0;
       for (let s = 0; s < n; s++) {
         const yy = sy + 1 + s * 4.6 + Math.sin(time * 8 + s + gust.phase) * 1.4;
         const drift = ((time * (88 + wind.knots * 7) + s * 26 + gust.phase * 10) % (w + 18)) - 8;
-        g.globalAlpha = 0.16 + gust.power * 0.22;
+        g.globalAlpha = 0.22 + gust.power * 0.28;
         g.beginPath();
         g.moveTo(x0 + drift, yy);
         g.lineTo(x0 + drift - (26 + gust.power * 16), yy + 1.4);
