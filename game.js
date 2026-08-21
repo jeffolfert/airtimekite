@@ -10,7 +10,7 @@
   const TWO_PI = Math.PI * 2;
   const BEST_KEY = "airtimeKiteBestV1";
   const REPAIR_URL = "https://www.airtimekite.com/";
-  const VERSION = "2026.08.20.5";
+  const VERSION = "2026.08.21.1";
   const versionEl = document.getElementById("version");
   if (versionEl) versionEl.textContent = VERSION;
   const repairLink = document.getElementById("repair-link");
@@ -435,10 +435,16 @@
     knots: 18,
     target: 18,
     gust: 0,
+    gustBoost: 0,
+    inGust: false,
     dir: 1,
     next: 4,
     label: "W",
   };
+
+  function windKnots() {
+    return wind.knots + wind.gustBoost;
+  }
 
   const run = {
     dist: 0,
@@ -501,7 +507,8 @@
   const spray = [];
   const pops = [];
   const foams = [];
-  const gustMarks = [];
+  const gusts = [];
+  let gustClock = 8;
 
   const WIPE_LINES = {
     yoink: [
@@ -855,6 +862,101 @@
     return false;
   }
 
+  function gustCovers(g, x) {
+    return x >= g.x && x <= g.x + g.len;
+  }
+
+  function spawnGust(kind) {
+    if (gusts.length >= 3) return;
+    const nuke = kind === "nuke";
+    let x = rider.x + (nuke ? rand(24, 50) : rand(36, 78));
+    const len = nuke ? rand(20, 30) : rand(13, 21);
+    if (bargeOccupies(x + len * 0.5, 10)) x += 26;
+    for (let i = 0; i < gusts.length; i++) {
+      if (Math.abs(gusts[i].x - x) < 22) x += 28;
+    }
+    gusts.push({
+      x,
+      len,
+      vx: -rand(2.8, 5.4),
+      power: nuke ? rand(0.85, 1) : rand(0.55, 0.85),
+      phase: rand(0, TWO_PI),
+      scored: false,
+      age: 0,
+      nuke,
+    });
+  }
+
+  function stepGusts(dt) {
+    if (state === STATE.PLAY && !bladder.blown && runTime > 4) {
+      gustClock -= dt;
+      if (gustClock <= 0 && gusts.length < 2) {
+        spawnGust("puff");
+        gustClock = rand(6.5, 12);
+      }
+    }
+
+    wind.gustBoost = 0;
+    wind.inGust = false;
+
+    for (let i = gusts.length - 1; i >= 0; i--) {
+      const g = gusts[i];
+      g.age += dt;
+      g.x += g.vx * dt;
+      if (state === STATE.PLAY && !bladder.blown && gustCovers(g, rider.x)) {
+        wind.inGust = true;
+        wind.gustBoost = Math.max(wind.gustBoost, g.power * (g.nuke ? 9 : 7));
+        const loaded = rider.edge > 0.42 && kite.pull > 0.3 && rider.vx > 5.5;
+        if (loaded && rider.onWater) {
+          rider.vx += (5.2 + g.power * 4.2) * rider.edge * dt;
+          if (!g.scored) {
+            g.scored = true;
+            addScore(90 + Math.round(g.power * 40), "GUST", "#ffc56a", false);
+            blip(400, 0.08, "sine", 0.045);
+          }
+        }
+      }
+      if (g.x + g.len < rider.x - 45 || g.age > 12) gusts.splice(i, 1);
+    }
+
+    wind.gust = clamp((windKnots() - 20) / 12, 0, 1);
+  }
+
+  function drawGusts(g) {
+    const sy = wy(0);
+    for (let i = 0; i < gusts.length; i++) {
+      const gust = gusts[i];
+      const x0 = wx(gust.x);
+      const x1 = wx(gust.x + gust.len);
+      if (x1 < -50 || x0 > W + 50) continue;
+      const w = x1 - x0;
+      const mid = (x0 + x1) * 0.5;
+      const pulse = 0.82 + Math.sin(time * 6.5 + gust.phase) * 0.1;
+      g.save();
+      g.fillStyle = "rgba(6, 18, 28, " + (0.52 * pulse).toFixed(3) + ")";
+      g.beginPath();
+      g.ellipse(mid, sy + 13, w * 0.5, 17 + gust.power * 7, 0, 0, TWO_PI);
+      g.fill();
+      g.fillStyle = "rgba(4, 10, 18, 0.34)";
+      g.beginPath();
+      g.ellipse(mid - w * 0.08, sy + 8, w * 0.32, 9, 0, 0, TWO_PI);
+      g.fill();
+      g.strokeStyle = "rgba(220, 238, 252, 0.42)";
+      g.lineWidth = 1.2;
+      const n = 5 + (gust.power * 3) | 0;
+      for (let s = 0; s < n; s++) {
+        const yy = sy + 1 + s * 4.6 + Math.sin(time * 8 + s + gust.phase) * 1.4;
+        const drift = ((time * (88 + wind.knots * 7) + s * 26 + gust.phase * 10) % (w + 18)) - 8;
+        g.globalAlpha = 0.22 + gust.power * 0.28;
+        g.beginPath();
+        g.moveTo(x0 + drift, yy);
+        g.lineTo(x0 + drift - (26 + gust.power * 16), yy + 1.4);
+        g.stroke();
+      }
+      g.restore();
+    }
+  }
+
   function maybeChaos(dt) {
     if (state !== STATE.PLAY || bladder.blown) return;
     if (runTime < 10) return;
@@ -870,7 +972,7 @@
     let kind = "chop";
     if (!rider.onWater && Math.abs(kite.loopAccum) > 1.8) kind = "loopfail";
     else if (!rider.onWater && Math.random() < 0.42) kind = "loopfail";
-    else if (wind.gust > 0.45 || wind.knots > 24) kind = "gustslam";
+    else if (wind.gust > 0.45 || windKnots() > 24) kind = "gustslam";
     else if (rider.onWater && rider.edge > 0.45) kind = "edge";
     else kind = pick(["chop", "edge", "gustslam", "chop"]);
 
@@ -1539,6 +1641,8 @@
     wind.knots = rand(15, 20);
     wind.target = wind.knots;
     wind.gust = 0;
+    wind.gustBoost = 0;
+    wind.inGust = false;
     wind.next = rand(5, 9);
 
     run.dist = 0;
@@ -1569,7 +1673,8 @@
     spray.length = 0;
     pops.length = 0;
     foams.length = 0;
-    gustMarks.length = 0;
+    gusts.length = 0;
+    gustClock = rand(5, 9);
     runTime = 0;
     shake = 0;
     flash = 0;
@@ -1690,7 +1795,7 @@
         wind.target = rand(24, 32); // nuclear
         wind.next = rand(4, 7);
         popup("GUST COMING", "#ffb36b", true);
-        gustMarks.push({ t: 0, life: 2.2 });
+        if (state === STATE.PLAY) spawnGust("nuke");
       } else {
         wind.target = rand(14, 22);
         wind.next = rand(6, 11);
@@ -1699,7 +1804,7 @@
     wind.knots = lerp(wind.knots, wind.target, 1 - Math.pow(0.12, dt));
     // micro texture
     wind.knots += Math.sin(time * 1.7) * 0.15 + Math.sin(time * 4.1) * 0.08;
-    wind.gust = clamp((wind.knots - 20) / 12, 0, 1);
+    wind.gust = clamp((windKnots() - 20) / 12, 0, 1);
   }
 
   function stepKite(dt, c) {
@@ -1740,7 +1845,7 @@
     const heightPow = 1 - Math.abs(kite.h - 0.38) * 0.85;
     const sidePow = 0.55 + 0.45 * (1 - Math.abs(kite.pos) * 0.35);
     const zone = clamp(heightPow, 0.15, 1) * sidePow;
-    const wind01 = clamp((wind.knots - 6) / 24, 0, 1.35);
+    const wind01 = clamp((windKnots() - 6) / 24, 0, 1.35);
     const sendBoost = kite.send * (0.55 + 0.7 * (1 - kite.h));
     kite.pull = wind01 * (0.28 + 0.72 * zone) + sendBoost * 0.22;
     if (kite.torn) {
@@ -1790,6 +1895,7 @@
       const sendUp = Math.max(0, kite.vh) + kite.send * 0.35;
       if (c.pop && loaded) {
         let pop = 11.4 + rider.vx * 0.4 + pull * 6.2 + sendUp * 3.5 + loft * 4.0;
+        if (wind.gustBoost > 1) pop += 2.1 + wind.gustBoost * 0.16;
         for (let i = 0; i < barges.length; i++) {
           const ahead = barges[i].x - rider.x;
           if (ahead > 4 && ahead < 26) {
@@ -1962,10 +2068,6 @@
       p.y += p.vy * dt * 0.08;
       p.vy *= 0.96;
       if (p.age > p.life) pops.splice(i, 1);
-    }
-    for (let i = gustMarks.length - 1; i >= 0; i--) {
-      gustMarks[i].t += dt;
-      if (gustMarks[i].t > gustMarks[i].life) gustMarks.splice(i, 1);
     }
     if (spray.length > 220) spray.splice(0, spray.length - 220);
   }
@@ -2442,7 +2544,8 @@
     // meters
     const mx = pad;
     const my = pad + 48;
-    meter(g, mx, my, 150, "WIND  " + Math.round(wind.knots) + " kt  W", clamp((wind.knots - 6) / 26, 0, 1), wind.knots > 24 ? "#ff7a3c" : wind.knots < 12 ? "#7ecbff" : "#ffe08a");
+    const knots = windKnots();
+    meter(g, mx, my, 150, "WIND  " + Math.round(knots) + " kt  W", clamp((knots - 6) / 26, 0, 1), knots > 24 || wind.inGust ? "#ff7a3c" : knots < 12 ? "#7ecbff" : "#ffe08a");
     meter(g, mx, my + 26, 150, "POWER", clamp(kite.pull, 0, 1.2) / 1.2, kite.pull > 0.85 ? "#ff6a3a" : "#5ee0c0");
     meter(g, mx, my + 52, 150, "EDGE", rider.edge, "#9ad0ff");
 
@@ -3144,6 +3247,7 @@
     } else if (state === STATE.PLAY) {
       runTime += dt;
       stepWind(dt);
+      stepGusts(dt);
       stepKite(dt, c);
       stepRider(dt, c);
       maybeExplode(dt);
@@ -3153,7 +3257,7 @@
       stepWindsurfers(dt);
       stepCam(dt);
       stepParticles(dt);
-      setWindHum(wind.knots, rider.vx);
+      setWindHum(windKnots(), rider.vx);
     } else if (state === STATE.WIPE) {
       wipe.t += dt;
       rider.x += rider.vx * dt * 0.4;
@@ -3164,6 +3268,7 @@
       stepBirds(dt);
       stepBarges(dt);
       stepWindsurfers(dt);
+      stepGusts(dt);
       stepCam(dt);
       stepParticles(dt);
       if (startLatched && wipe.t > 0.35) {
@@ -3183,6 +3288,7 @@
     windStreaks(ctx);
     mountains(ctx);
     water(ctx);
+    drawGusts(ctx);
     drawBarges(ctx);
     drawWindsurfers(ctx);
 
