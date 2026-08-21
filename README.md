@@ -33,9 +33,10 @@ Repairs and replacement bladders: [airtimekite.com](https://www.airtimekite.com/
 - **Barge jump** — clear the tug and grain barges with enough air and land clean
 - **Mega send** — stick a huge loaded jump: diving birds explode and the grain barge sinks
 - **Sail by** — jump the windsurfer traffic
+- **Gust** — ride a visible Gorge gust while edged and loaded
 - **Bird strike** — any overlap shreds the canopy. Instant wipe. Brogan quotes the repair.
 - Best run is saved in the browser
 
-Wind comes and goes. Overpowered and not edging = yoink. No power = stall. Every now and then a bladder explodes — Brogan will quote the repair. Gulls and osprey dive the canopy — steer clear or it's an instant bird strike and a shredded canopy. Grain barges work the river; jump them or it's a crash. Stick a huge send and the birds blow up and the barge goes down. Windsurfers work the same water — jump them or it's a crash. And sometimes the Gorge just dumps you: edge catch, loop gone wrong, gust slam, chop. Wipeouts are cheap: one button and you’re back on the water.
+Wind comes and goes — watch for dark patches racing the river. Ride a gust while edged for extra speed and air. Overpowered and not edging = yoink. No power = stall. Every now and then a bladder explodes — Brogan will quote the repair. Gulls and osprey dive the canopy — steer clear or it's an instant bird strike and a shredded canopy. Grain barges work the river; jump them or it's a crash. Stick a huge send and the birds blow up and the barge goes down. Windsurfers work the same water — jump them or it's a crash. And sometimes the Gorge just dumps you: edge catch, loop gone wrong, gust slam, chop. Wipeouts are cheap: one button and you’re back on the water.
 
-Build `2026.08.20.5` — shown at the bottom of the page.
+Build `2026.08.21.1` — shown at the bottom of the page.
